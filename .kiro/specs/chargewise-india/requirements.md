@@ -15,6 +15,16 @@ using a weighted spatial scoring algorithm powered by GeoPandas.
 The MVP targets a 2–3 week delivery window and covers city-level analysis for
 Indian cities, starting with Bengaluru.
 
+**Scope note:** Requirements are tagged **[MVP]** or **[Stretch]**. MVP
+requirements are the 2–3 week delivery target. Stretch requirements are
+real, specified, and intended for implementation, but only after the MVP is
+functionally complete end-to-end. Two items in particular — full JWKS-based
+auth (Requirement 8) and asynchronous job polling (Requirement 9, criterion
+4) — assume infrastructure (an OIDC provider, a job queue/store) that isn't
+part of the MVP build and would consume disproportionate time relative to
+the recruiter-facing value they add at this stage. Simpler MVP-equivalents
+are specified in their place.
+
 ---
 
 ## Glossary
@@ -52,7 +62,7 @@ Indian cities, starting with Bengaluru.
 
 ## Requirements
 
-### Requirement 1: City and Parameter Selection
+### Requirement 1: City and Parameter Selection [MVP]
 
 **User Story:** As an EV charging company analyst, I want to select a city,
 charger type, and search radius before running analysis, so that I can scope
@@ -73,7 +83,10 @@ the results to my specific expansion plan.
    the invalid field, identifying the field name and constraint violated,
    without navigating away from the selection panel.
 4. THE Frontend SHALL provide city options for at least Bengaluru, Mumbai,
-   Hyderabad, Chennai, and Pune in the MVP.
+   Hyderabad, Chennai, and Pune in the MVP. **Note:** only Bengaluru requires
+   fully populated datasets for MVP delivery; other cities may appear in the
+   dropdown but rely on Requirement 3, criterion 6 to correctly report
+   partial unavailability.
 5. THE Frontend SHALL provide charger type options labelled `SLOW`, `FAST`,
    and `DC_FAST`.
 6. WHEN the User changes the city selection, THE Frontend SHALL reset the
@@ -82,7 +95,7 @@ the results to my specific expansion plan.
 
 ---
 
-### Requirement 2: Map Display of Base Layers
+### Requirement 2: Map Display of Base Layers [MVP]
 
 **User Story:** As an urban planner, I want to see existing infrastructure on
 the map before running analysis, so that I can understand the current state of
@@ -113,7 +126,7 @@ the city before interpreting recommendations.
 
 ---
 
-### Requirement 3: Charger and POI Data Ingestion
+### Requirement 3: Charger and POI Data Ingestion [MVP]
 
 **User Story:** As a system administrator, I want the system to ingest and
 store geospatial datasets from OSM and OGD, so that analysis is grounded in
@@ -148,7 +161,7 @@ real, current data.
 
 ---
 
-### Requirement 4: Recommendation API
+### Requirement 4: Recommendation API [MVP]
 
 **User Story:** As an EV charging company analyst, I want to call a single
 API endpoint with city, charger type, and radius parameters, so that I
@@ -192,7 +205,7 @@ multiple service calls myself.
 
 ---
 
-### Requirement 5: Spatial Scoring Algorithm
+### Requirement 5: Spatial Scoring Algorithm [MVP]
 
 **User Story:** As an EV charging company analyst, I want each candidate
 location to receive a transparent, weighted score based on spatial attributes,
@@ -222,9 +235,14 @@ value.
    Search_Radius, and SHALL assign a factor score of 100 to candidates where
    no charger is found within the Search_Radius.
 4. WHEN computing the population factor, THE Scorer SHALL create a buffer of
-   Search_Radius metres around each candidate using `GeoDataFrame.buffer()`,
+   **1 km** (fixed) around each candidate using `GeoDataFrame.buffer()`,
    build a spatial index via `GeoDataFrame.sindex`, and intersect the buffer
    with population grid cells to sum the population within the buffer area.
+   **Design note:** this buffer is intentionally fixed at 1 km regardless of
+   the user-selected Search_Radius — population density near a site is a
+   fixed-scale signal, whereas Search_Radius governs how far out to look for
+   competing infrastructure (chargers, roads, malls). This asymmetry is
+   deliberate and SHALL NOT be "corrected" to use Search_Radius.
 5. WHEN scoring a batch of candidates, THE Scorer SHALL execute all layer
    intersections using `GeoDataFrame.sjoin()` on the full batch and SHALL NOT
    iterate row-by-row in Python for spatial predicates, so that a batch of up
@@ -246,7 +264,7 @@ value.
 
 ---
 
-### Requirement 6: Ranked Candidate Display
+### Requirement 6: Ranked Candidate Display [MVP]
 
 **User Story:** As an EV charging company analyst, I want to see ranked
 candidate locations on the map and in a side panel, so that I can quickly
@@ -281,7 +299,7 @@ compare options and shortlist sites for field survey.
 
 ---
 
-### Requirement 7: Analysis Endpoint and Geo Service Processing
+### Requirement 7: Analysis Endpoint and Geo Service Processing [MVP]
 
 **User Story:** As a developer integrating with ChargeWise India, I want a
 `GET /analysis` endpoint that returns spatial statistics for a city, so that
@@ -294,6 +312,10 @@ I can build dashboards and reports without re-implementing geospatial logic.
    score distribution (mean, median, and p90 computed on a 0–100 scale), and
    coverage percentage defined as the proportion of the city bounding polygon
    area (in km²) that contains at least one candidate feature within 500 m.
+   **Computation method:** union all candidate buffers (radius 500 m) into a
+   single polygon via `GeoDataFrame.union_all()` (or equivalent dissolve),
+   intersect that union with the city bounding polygon, and divide the
+   intersection area by the total bounding polygon area.
 2. WHEN the Geo_Service receives an analysis request, THE Geo_Service SHALL
    aggregate statistics at the ward boundary level and compute area coverage
    by intersecting candidate buffers with the city bounding polygon before
@@ -313,11 +335,37 @@ I can build dashboards and reports without re-implementing geospatial logic.
 
 ### Requirement 8: Authentication and Authorisation
 
-**User Story:** As an organisation administrator, I want API access to be
-protected by authentication, so that analysis data and recommendations are
-not publicly accessible to unauthorised parties.
+#### 8A. MVP: API Key Authentication [MVP]
 
-#### Acceptance Criteria
+**User Story:** As an organisation administrator, I want API access to be
+protected by a simple credential, so that recommendations and analysis data
+are not publicly accessible during the MVP phase, without requiring a full
+identity provider integration.
+
+##### Acceptance Criteria
+
+1. THE API_Server SHALL require a valid static API key, supplied via an
+   `X-API-Key` header, on all endpoints except `GET /cities` and
+   `GET /health`.
+2. WHEN a request arrives on a protected endpoint without an `X-API-Key`
+   header or with a key that does not match the configured value, THE
+   API_Server SHALL return a `401 Unauthorized` response and SHALL NOT
+   process the request body.
+3. THE API_Server SHALL read the expected API key exclusively from the
+   `API_KEY` environment variable and SHALL never log or echo the key value.
+4. THE Frontend SHALL store the API key exclusively in JavaScript memory
+   (not `localStorage`, `sessionStorage`, or cookies); WHEN a page reload
+   occurs and no in-memory key is present, THE Frontend SHALL prompt the
+   User to re-enter it before any protected request is made.
+
+#### 8B. Stretch: JWKS-Based Bearer Token Authentication [Stretch]
+
+**User Story:** As an organisation administrator, I want API access
+protected by a standards-based identity provider, so that the system can
+support multiple users and organisations with proper token lifecycle
+management ahead of any production/multi-tenant use.
+
+##### Acceptance Criteria
 
 1. THE API_Server SHALL require a valid Bearer token on all endpoints except
    `GET /cities` and `GET /health`; tokens present on public endpoints SHALL
@@ -346,11 +394,13 @@ not publicly accessible to unauthorised parties.
 
 ### Requirement 9: Performance and Reliability
 
+#### 9A. MVP: Core Performance and Health [MVP]
+
 **User Story:** As an EV charging company analyst, I want the application to
 respond quickly and remain available during peak use, so that planning
 sessions are not interrupted by slow or failed responses.
 
-#### Acceptance Criteria
+##### Acceptance Criteria
 
 1. THE API_Server SHALL respond to `GET /cities` requests within 500 ms at
    the 95th percentile under a sustained load of 50 concurrent users.
@@ -362,26 +412,43 @@ sessions are not interrupted by slow or failed responses.
    `(city, chargerType, radius)` tuple that has not yet expired — within
    200 ms at the 95th percentile under a sustained load of 50 concurrent
    users.
-4. WHEN a forwarded recommendation request has not returned from the
+4. IF the Geo_Service returns an HTTP 5xx response or does not respond within
+   3 seconds, THE API_Server SHALL return a `503 Service Unavailable`
+   response with a `Retry-After` header value between 1 and 60 seconds
+   (inclusive). **This synchronous timeout-and-503 behaviour is the MVP
+   contract for all `POST /recommendation` requests** — see 9B for the
+   async alternative deferred to Stretch.
+5. THE API_Server SHALL expose a `GET /health` endpoint that returns HTTP 200
+   with a JSON body listing each upstream dependency and its reachability
+   status (reachable / unreachable) when all dependencies are reachable and
+   responding within their expected SLA. Expected SLA per dependency:
+   Geo_Service reachable and responding to `GET /data-health` within 2
+   seconds; JWKS/auth provider (Stretch only) reachable within 2 seconds.
+6. IF one or more upstream dependencies are unreachable or exceed their
+   expected SLA (as defined in criterion 5), THEN `GET /health` SHALL return
+   HTTP 503 with a JSON body identifying each degraded dependency by name.
+
+#### 9B. Stretch: Asynchronous Recommendation Processing [Stretch]
+
+**User Story:** As an EV charging company analyst, I want long-running
+recommendation requests to be handled asynchronously, so that the client
+never blocks or times out on a slow analysis for a very large city or radius.
+
+##### Acceptance Criteria
+
+1. WHEN a forwarded recommendation request has not returned from the
    Geo_Service within 3 seconds, THE API_Server SHALL return a `202 Accepted`
    response containing a `jobId` (UUID string) and expose a
    `GET /recommendation/{jobId}` polling endpoint that returns the job status
    as one of `pending`, `complete`, or `failed`.
-5. IF the Geo_Service returns an HTTP 5xx response or does not respond within
-   3 seconds on a non-async request path, THEN THE API_Server SHALL return a
-   `503 Service Unavailable` response with a `Retry-After` header value
-   between 1 and 60 seconds (inclusive).
-6. THE API_Server SHALL expose a `GET /health` endpoint that returns HTTP 200
-   with a JSON body listing each upstream dependency and its reachability
-   status (reachable / unreachable) when all dependencies are reachable and
-   responding within their expected SLA.
-7. IF one or more upstream dependencies are unreachable or exceed their
-   expected SLA, THEN `GET /health` SHALL return HTTP 503 with a JSON body
-   identifying each degraded dependency by name.
+2. THE API_Server SHALL persist job state (status, result, timestamps) in a
+   store that survives an API_Server process restart before this requirement
+   is considered complete; an in-memory-only job store does not satisfy this
+   criterion.
 
 ---
 
-### Requirement 10: Data Parsing and Round-Trip Integrity
+### Requirement 10: Data Parsing and Round-Trip Integrity [MVP]
 
 **User Story:** As a data engineer, I want all geospatial data I/O to be
 validated for round-trip correctness, so that no location data is silently
@@ -419,7 +486,7 @@ corrupted during serialisation or deserialisation.
 
 ---
 
-### Requirement 11: Logging, Observability, and Error Reporting
+### Requirement 11: Logging, Observability, and Error Reporting [MVP]
 
 **User Story:** As a platform engineer, I want structured logs and error
 traces from all services, so that I can diagnose production incidents without
@@ -450,7 +517,7 @@ SSH-ing into containers.
 
 ---
 
-### Requirement 12: Configuration and Environment Management
+### Requirement 12: Configuration and Environment Management [MVP]
 
 **User Story:** As a DevOps engineer, I want all service configuration to be
 externalisable through environment variables, so that the same container
@@ -460,18 +527,54 @@ without code changes.
 #### Acceptance Criteria
 
 1. THE API_Server SHALL read the following configuration values exclusively
-   from environment variables: Geo_Service base URL (`GEO_SERVICE_URL`), JWKS
-   endpoint URL (`JWKS_URL`), cache TTL in seconds (`CACHE_TTL_SECONDS`,
-   integer 1–86400), and allowed CORS origins (`CORS_ORIGINS`,
-   comma-separated list of absolute URLs or the wildcard `*`).
+   from environment variables: Geo_Service base URL (`GEO_SERVICE_URL`),
+   static API key (`API_KEY`, see Requirement 8A), cache TTL in seconds
+   (`CACHE_TTL_SECONDS`, integer 1–86400), and allowed CORS origins
+   (`CORS_ORIGINS`, comma-separated list of absolute URLs or the wildcard
+   `*`). **Stretch-only:** `JWKS_URL`, `TOKEN_ISSUER`, `TOKEN_AUDIENCE`
+   (Requirement 8B).
 2. THE Geo_Service SHALL read the following configuration values exclusively
    from environment variables: data directory path (`DATA_DIR`), default CRS
    EPSG code (`DEFAULT_CRS_EPSG`, integer), and log level (`LOG_LEVEL`, one
    of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
-3. IF a required environment variable is absent at startup or is set to an
+3. THE Frontend SHALL read the following configuration values exclusively
+   from build-time environment variables: API_Server base URL
+   (`VITE_API_URL`) and the map style/tile source URL (`VITE_MAP_STYLE_URL`).
+4. IF a required environment variable is absent at startup or is set to an
    empty string, THEN THE affected service SHALL log the missing variable name
    at ERROR level and SHALL exit with a non-zero exit code within 5 seconds
-   of startup.
-4. THE API_Server and Geo_Service SHALL each provide a `.env.example` file
-   listing every required and optional environment variable with a
-   description, accepted values or format, and an example value.
+   of startup. For the Frontend, this SHALL instead render a build-time
+   error preventing a broken bundle from being deployed.
+5. THE API_Server, Geo_Service, and Frontend SHALL each provide a
+   `.env.example` file listing every required and optional environment
+   variable with a description, accepted values or format, and an example
+   value.
+
+---
+
+### Requirement 13: Testing Requirements [MVP]
+
+**User Story:** As a developer, I want the Scorer and spatial join logic
+covered by tests against synthetic data, so that correctness bugs — which
+are often silent in geospatial code (e.g. a CRS mismatch producing a
+plausible-looking but wrong distance) — are caught before they reach real
+Bengaluru-scale data.
+
+#### Acceptance Criteria
+
+1. THE Geo_Service SHALL include unit tests for every Scorer factor function
+   (population, charger distance, road, parking, mall) using synthetic
+   GeoDataFrames of no more than 10 features each, covering at minimum: a
+   normal case, a case with zero matching features (triggering the
+   Requirement 5, criterion 8 fallback), and a boundary case at the exact
+   Search_Radius distance.
+2. THE Geo_Service SHALL include a unit test asserting that
+   `GeoDataFrame.crs` is EPSG:32643 immediately after any layer load
+   function returns, per Requirement 3, criterion 2.
+3. THE Geo_Service SHALL include a round-trip test implementing Requirement
+   10, criterion 3 using a synthetic FeatureCollection with at least one
+   Point, one LineString, and one Polygon feature.
+4. THE API_Server SHALL include tests for `POST /recommendation` covering:
+   a valid request, a request with an out-of-range `radius`, an unsupported
+   `city`, and a simulated Geo_Service 5xx/timeout triggering the
+   Requirement 9A, criterion 4 fallback.
