@@ -587,12 +587,23 @@ class Scorer:
         Orchestrates the five factor methods and combines them via
         ``compute_final_score``.  Returns a DataFrame aligned to
         ``candidates.index`` with columns:
-          ``pop_factor``     — population factor (0–100 float)
-          ``charger_factor`` — charger-distance factor (0–100 float)
-          ``road_factor``    — road-proximity factor (0 or 100 float)
-          ``park_factor``    — parking factor (0 or 100 float)
-          ``mall_factor``    — mall-proximity factor (0 or 100 float)
-          ``score``          — final weighted score (0–100 int)
+
+        Factor scores (0–100):
+          ``pop_factor``     — population factor
+          ``charger_factor`` — charger-distance factor
+          ``road_factor``    — road-proximity factor
+          ``park_factor``    — parking factor
+          ``mall_factor``    — mall-proximity factor
+          ``score``          — final weighted score (int)
+
+        Raw detail fields (reused by the router to avoid a duplicate spatial
+        pass — Requirement 5 AC-5: SHALL NOT repeat row-by-row or redundant
+        batch operations):
+          ``population_1km``            — int, raw population sum within 1 km
+          ``nearest_charger_dist_m``    — float | NaN, distance to nearest charger
+          ``road_type``                 — str, OSM highway tag of nearest arterial
+          ``parking_available``         — bool, True if inside a parking polygon
+          ``nearest_mall_dist_m``       — float | NaN, distance to nearest mall
 
         Missing layers in ``datasets`` are handled transparently: each
         factor method returns zeros (or 100 for charger_distance) when its
@@ -612,16 +623,42 @@ class Scorer:
         -------
         pd.DataFrame
             Index matches ``candidates.index``.
-            Columns: ``pop_factor``, ``charger_factor``, ``road_factor``,
-            ``park_factor``, ``mall_factor``, ``score``.
         """
-        pop_factor     = self.population_factor(candidates, datasets.population_grid)
-        charger_factor = self.charger_distance_factor(
+        # ------------------------------------------------------------------
+        # Population — buffer once, sjoin once; extract both the factor
+        # score AND the raw population sum in a single pass.
+        # ------------------------------------------------------------------
+        pop_factor, population_1km = self._population_factor_with_raw(
+            candidates, datasets.population_grid
+        )
+
+        # ------------------------------------------------------------------
+        # Charger distance — sjoin_nearest once; keep raw distance.
+        # ------------------------------------------------------------------
+        charger_factor, charger_dist_m = self._charger_factor_with_raw(
             candidates, datasets.ev_chargers, search_radius
         )
-        road_factor    = self.road_proximity_factor(candidates, datasets.roads)
-        park_factor    = self.parking_factor(candidates, datasets.parking)
-        mall_factor    = self.mall_proximity_factor(candidates, datasets.malls)
+
+        # ------------------------------------------------------------------
+        # Road proximity — sjoin_nearest once; keep raw highway tag.
+        # ------------------------------------------------------------------
+        road_factor, road_type = self._road_factor_with_raw(
+            candidates, datasets.roads
+        )
+
+        # ------------------------------------------------------------------
+        # Parking — sjoin once; keep boolean.
+        # ------------------------------------------------------------------
+        park_factor, parking_available = self._parking_factor_with_raw(
+            candidates, datasets.parking
+        )
+
+        # ------------------------------------------------------------------
+        # Mall proximity — sjoin_nearest once; keep raw distance.
+        # ------------------------------------------------------------------
+        mall_factor, mall_dist_m = self._mall_factor_with_raw(
+            candidates, datasets.malls
+        )
 
         score = self.compute_final_score(
             pop_factor, charger_factor, road_factor, park_factor, mall_factor
@@ -629,12 +666,176 @@ class Scorer:
 
         return pd.DataFrame(
             {
-                "pop_factor":     pop_factor,
-                "charger_factor": charger_factor,
-                "road_factor":    road_factor,
-                "park_factor":    park_factor,
-                "mall_factor":    mall_factor,
-                "score":          score,
+                # Factor scores
+                "pop_factor":              pop_factor,
+                "charger_factor":          charger_factor,
+                "road_factor":             road_factor,
+                "park_factor":             park_factor,
+                "mall_factor":             mall_factor,
+                "score":                   score,
+                # Raw detail fields (reused by router — no second spatial pass)
+                "population_1km":          population_1km,
+                "nearest_charger_dist_m":  charger_dist_m,
+                "road_type":               road_type,
+                "parking_available":       parking_available,
+                "nearest_mall_dist_m":     mall_dist_m,
             },
             index=candidates.index,
         )
+
+    # ------------------------------------------------------------------
+    # Private combined-pass helpers
+    # Each returns (factor_series, raw_detail_series) from a single
+    # spatial operation — avoiding a second pass in the router.
+    # ------------------------------------------------------------------
+
+    def _population_factor_with_raw(
+        self,
+        candidates: gpd.GeoDataFrame,
+        population_grid: gpd.GeoDataFrame,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Return (pop_factor [0-100], population_1km [int]) in one sjoin."""
+        if population_grid.empty:
+            zeros = pd.Series(0.0, index=candidates.index)
+            return zeros, zeros.astype(int)
+
+        buffers = gpd.GeoDataFrame(
+            geometry=candidates.geometry.buffer(POPULATION_BUFFER_M),
+            crs=candidates.crs,
+        )
+        joined = gpd.sjoin(
+            buffers,
+            population_grid[["geometry", "population"]],
+            how="left",
+            predicate="intersects",
+        )
+        pop_sums = (
+            joined.groupby(joined.index)["population"]
+            .sum()
+            .reindex(candidates.index, fill_value=0)
+        )
+        pop_factor = (pop_sums / POPULATION_NORMALISER * 100).clip(upper=100.0)
+        return pop_factor, pop_sums.astype(int)
+
+    def _charger_factor_with_raw(
+        self,
+        candidates: gpd.GeoDataFrame,
+        ev_chargers: gpd.GeoDataFrame,
+        search_radius: int,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Return (charger_factor [0-100], nearest_charger_dist_m [float|NaN])."""
+        if ev_chargers.empty:
+            full = pd.Series(100.0, index=candidates.index)
+            nan_dist = pd.Series(float("nan"), index=candidates.index)
+            return full, nan_dist
+
+        nearest = gpd.sjoin_nearest(
+            candidates[["geometry"]],
+            ev_chargers[["geometry"]].reset_index(drop=True),
+            how="left",
+            max_distance=search_radius,
+            distance_col="dist_m",
+        )
+        nearest_sorted = nearest.sort_values("dist_m", na_position="last")
+        nearest = (
+            nearest_sorted
+            .loc[~nearest_sorted.index.duplicated(keep="first")]
+            .reindex(candidates.index)
+        )
+        charger_factor = (
+            (nearest["dist_m"] / search_radius * 100)
+            .clip(upper=100.0)
+            .fillna(100.0)
+        )
+        return charger_factor, nearest["dist_m"]
+
+    def _road_factor_with_raw(
+        self,
+        candidates: gpd.GeoDataFrame,
+        roads: gpd.GeoDataFrame,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Return (road_factor [0 or 100], road_type [str])."""
+        if roads.empty:
+            zeros = pd.Series(0.0, index=candidates.index)
+            none_type = pd.Series("none", index=candidates.index)
+            return zeros, none_type
+
+        cols = ["geometry"] + (["highway"] if "highway" in roads.columns else [])
+        nearest = gpd.sjoin_nearest(
+            candidates[["geometry"]],
+            roads[cols].reset_index(drop=True),
+            how="left",
+            max_distance=ROAD_PROXIMITY_M,
+            distance_col="road_dist_m",
+        )
+        nearest_sorted = nearest.sort_values("road_dist_m", na_position="last")
+        nearest = (
+            nearest_sorted
+            .loc[~nearest_sorted.index.duplicated(keep="first")]
+            .reindex(candidates.index)
+        )
+        road_factor = nearest["road_dist_m"].notna().astype(float) * 100.0
+
+        if "highway" in nearest.columns:
+            road_type = nearest["highway"].fillna("none")
+        else:
+            road_type = pd.Series("none", index=candidates.index)
+
+        return road_factor, road_type
+
+    def _parking_factor_with_raw(
+        self,
+        candidates: gpd.GeoDataFrame,
+        parking: gpd.GeoDataFrame,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Return (parking_factor [0 or 100], parking_available [bool])."""
+        if parking.empty:
+            zeros = pd.Series(0.0, index=candidates.index)
+            falses = pd.Series(False, index=candidates.index)
+            return zeros, falses
+
+        matched = gpd.sjoin(
+            candidates[["geometry"]],
+            parking[["geometry"]],
+            how="inner",
+            predicate="intersects",
+        )
+        matched_idx = matched.index.unique()
+        is_matched = candidates.index.isin(matched_idx)
+        park_factor = pd.Series(
+            is_matched.astype(float) * 100.0,
+            index=candidates.index,
+        )
+        parking_available = pd.Series(is_matched, index=candidates.index)
+        return park_factor, parking_available
+
+    def _mall_factor_with_raw(
+        self,
+        candidates: gpd.GeoDataFrame,
+        malls: gpd.GeoDataFrame,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Return (mall_factor [0 or 100], nearest_mall_dist_m [float|NaN])."""
+        if malls.empty:
+            zeros = pd.Series(0.0, index=candidates.index)
+            nan_dist = pd.Series(float("nan"), index=candidates.index)
+            return zeros, nan_dist
+
+        nearest = gpd.sjoin_nearest(
+            candidates[["geometry"]],
+            malls[["geometry"]].reset_index(drop=True),
+            how="left",
+            distance_col="mall_dist_m",
+        )
+        nearest_sorted = nearest.sort_values("mall_dist_m", na_position="last")
+        nearest = (
+            nearest_sorted
+            .loc[~nearest_sorted.index.duplicated(keep="first")]
+            .reindex(candidates.index)
+        )
+        mall_factor = (
+            nearest["mall_dist_m"]
+            .le(MALL_PROXIMITY_M)
+            .where(nearest["mall_dist_m"].notna(), False)
+            .astype(float) * 100.0
+        )
+        return mall_factor, nearest["mall_dist_m"]

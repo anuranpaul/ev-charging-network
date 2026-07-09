@@ -45,8 +45,9 @@ import math
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
-from shapely.geometry import Point
+from shapely.geometry import Point, MultiPoint
 
 logger = logging.getLogger(__name__)
 
@@ -138,45 +139,38 @@ def _candidates_from_grid(city_bbox: Any) -> gpd.GeoDataFrame:
 
     Grid construction
     ~~~~~~~~~~~~~~~~~
+    Uses vectorised numpy meshgrid — no Python-level Point() loop.
     Given the bounding box (minx, miny, maxx, maxy) in EPSG:32643 metres:
 
-    1. Set ``x = minx``, ``y = miny``.
-    2. Enumerate integer step counts ``ix = 0, 1, 2, …`` and
-       ``iy = 0, 1, 2, …`` until ``x > maxx`` / ``y > maxy``.
-    3. Candidate coordinates:
-           x_i = minx + ix * GRID_STEP_M
-           y_i = miny + iy * GRID_STEP_M
-    4. Points are added in row-major order (y outer, x inner), which gives
-       the same sequence for the same bbox on every call.
+    1. Build 1-D arrays of x and y coordinates via ``np.arange``.
+    2. ``np.meshgrid`` produces all (x, y) pairs at once.
+    3. ``gpd.points_from_xy`` converts the flat coordinate arrays to a
+       GeoSeries without any Python-level iteration.
 
-    The approach uses ``math.floor`` on the step counts to compute the exact
-    number of steps up-front, then uses a list comprehension — no floating-
-    point accumulation errors that could cause a different number of points
-    across platforms.
+    Points are emitted in row-major order (y outer, x inner) — same
+    sequence as the previous list-comprehension approach, so the output
+    is identical and deterministic for the same bbox.
     """
     minx, miny, maxx, maxy = city_bbox.bounds
 
-    # Compute number of steps in each direction (inclusive of start, may
-    # include a point at or beyond max if bbox width is an exact multiple).
-    x_steps: int = int(math.floor((maxx - minx) / GRID_STEP_M)) + 1
-    y_steps: int = int(math.floor((maxy - miny) / GRID_STEP_M)) + 1
+    xs = np.arange(minx, maxx + GRID_STEP_M, GRID_STEP_M)
+    ys = np.arange(miny, maxy + GRID_STEP_M, GRID_STEP_M)
 
-    # Build point list in deterministic row-major order (y outer, x inner).
-    points: list[Point] = [
-        Point(minx + ix * GRID_STEP_M, miny + iy * GRID_STEP_M)
-        for iy in range(y_steps)
-        for ix in range(x_steps)
-    ]
+    # meshgrid in 'ij' indexing then flatten so y is outer (row-major).
+    xx, yy = np.meshgrid(xs, ys)          # shape (n_y, n_x)
+    coords_x = xx.ravel()
+    coords_y = yy.ravel()
 
-    gdf = gpd.GeoDataFrame(geometry=points, crs=f"EPSG:{TARGET_EPSG}")
+    geometry = gpd.points_from_xy(coords_x, coords_y)
+    gdf = gpd.GeoDataFrame(geometry=geometry, crs=f"EPSG:{TARGET_EPSG}")
     gdf = gdf.reset_index(drop=True)
 
     logger.info(
         "candidates generated from deterministic grid",
         extra={
             "candidate_count": len(gdf),
-            "x_steps": x_steps,
-            "y_steps": y_steps,
+            "x_steps": len(xs),
+            "y_steps": len(ys),
             "grid_step_m": GRID_STEP_M,
             "bbox": (minx, miny, maxx, maxy),
         },
