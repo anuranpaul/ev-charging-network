@@ -13,7 +13,12 @@ type CityInfo struct {
 }
 
 // CitiesHandler returns the static city registry. Public — no auth required.
+// Only GET is accepted; all other methods return 405.
 func CitiesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	cities := make([]CityInfo, len(SupportedCities))
 	for i, name := range SupportedCities {
 		cities[i] = CityInfo{Name: name}

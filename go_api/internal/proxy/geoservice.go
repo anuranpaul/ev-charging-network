@@ -117,3 +117,29 @@ func Write503(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusServiceUnavailable)
 	w.Write([]byte(`{"message":"geo service unavailable"}`))
 }
+
+// hopByHopHeaders lists the HTTP/1.1 hop-by-hop headers that must not be
+// forwarded from an upstream response to the client (RFC 7230 §6.1).
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailer":             true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+// CopyHeaders copies response headers from src to dst, skipping hop-by-hop
+// headers that must not be forwarded to the downstream client.
+func CopyHeaders(dst http.Header, src http.Header) {
+	for k, vv := range src {
+		if hopByHopHeaders[k] {
+			continue
+		}
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}

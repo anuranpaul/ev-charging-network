@@ -19,6 +19,7 @@ func APIKeyMiddleware(expectedKey string) func(http.Handler) http.Handler {
 
 			supplied := r.Header.Get("X-API-Key")
 			if subtle.ConstantTimeCompare([]byte(supplied), []byte(expectedKey)) != 1 {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]string{
 					"message": "missing or invalid X-API-Key",

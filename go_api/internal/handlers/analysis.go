@@ -79,11 +79,8 @@ func AnalysisHandler(geoProxy *proxy.GeoClient) http.HandlerFunc {
 			return
 		}
 
-		for k, vv := range result.Headers {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
+		// Forward upstream headers, skipping hop-by-hop entries (RFC 7230 §6.1).
+		proxy.CopyHeaders(w.Header(), result.Headers)
 		w.WriteHeader(result.StatusCode)
 		w.Write(result.Body)
 	}

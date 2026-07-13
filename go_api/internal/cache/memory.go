@@ -13,10 +13,17 @@ type CacheKey struct {
 	Radius      int
 }
 
-// NormaliseKey returns a CacheKey with City title-cased and ChargerType uppercased.
+// NormaliseKey returns a CacheKey with City title-cased and ChargerType
+// uppercased. Empty strings are preserved as-is (callers are expected to
+// validate inputs before calling NormaliseKey, but the function must not
+// panic on empty input).
 func NormaliseKey(city, chargerType string, radius int) CacheKey {
+	normCity := city
+	if len(city) > 0 {
+		normCity = strings.ToUpper(city[:1]) + strings.ToLower(city[1:])
+	}
 	return CacheKey{
-		City:        strings.ToTitle(city[:1]) + strings.ToLower(city[1:]),
+		City:        normCity,
 		ChargerType: strings.ToUpper(chargerType),
 		Radius:      radius,
 	}

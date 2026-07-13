@@ -40,6 +40,9 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 			return
 		}
 
+		// Cap incoming body to 1 MB — a valid recommendation request is under
+		// 200 bytes; anything larger is malformed or malicious.
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -123,11 +126,8 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 			return
 		}
 
-		for k, vv := range result.Headers {
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
+		// Forward upstream headers, skipping hop-by-hop entries (RFC 7230 §6.1).
+		proxy.CopyHeaders(w.Header(), result.Headers)
 		w.Header().Set("X-Cache", "MISS")
 
 		if result.StatusCode >= 200 && result.StatusCode < 300 {

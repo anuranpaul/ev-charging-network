@@ -49,13 +49,15 @@ func correlationIDFromContext(ctx context.Context) string {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Capture arrival time before handing off to downstream handlers.
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
 
 		next.ServeHTTP(rec, r)
 
 		entry := map[string]interface{}{
-			"timestamp":      time.Now().UTC().Format(time.RFC3339),
+			// timestamp = when the request arrived, not when the response was sent.
+			"timestamp":      start.UTC().Format(time.RFC3339),
 			"method":         r.Method,
 			"path":           r.URL.Path,
 			"status":         rec.status,
@@ -92,6 +94,14 @@ func main() {
 	mux.HandleFunc("/recommendation", handlers.RecommendationHandler(geoProxy, memCache))
 	mux.HandleFunc("/analysis", handlers.AnalysisHandler(geoProxy))
 
+	// Catch-all: return a JSON 404 instead of the default plain-text body so
+	// API clients always receive a consistent JSON envelope.
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"message": "not found"})
+	})
+
 	// Middleware chain (outermost first):
 	//   correlationID → logger → recovery → CORS → auth → mux
 	//
@@ -111,7 +121,11 @@ func main() {
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: handler,
-		// Prevent slow clients from holding connections open indefinitely.
+		// ReadHeaderTimeout caps how long a client can take to send just the
+		// request headers, closing the Slowloris attack surface before
+		// ReadTimeout even starts.
+		ReadHeaderTimeout: 5 * time.Second,
+		// ReadTimeout covers the full read phase (headers + body).
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
