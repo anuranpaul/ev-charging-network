@@ -2,6 +2,7 @@
 fastapi==0.111.1
 uvicorn[standard]==0.30.1
 pydantic==2.7.4
+python-dotenv==1.0.1
 
 # Geospatial (pinned — not used yet, wired in next task)
 geopandas==0.14.4
