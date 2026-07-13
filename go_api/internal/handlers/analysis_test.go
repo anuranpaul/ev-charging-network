@@ -14,6 +14,15 @@ func newAnalysisHandler(geoURL string) http.HandlerFunc {
 	return AnalysisHandler(geoProxy)
 }
 
+func mockGeoService(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write([]byte(body))
+	}))
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
