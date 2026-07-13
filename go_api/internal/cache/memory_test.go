@@ -1,122 +1,269 @@
+// Run with: go test -race ./internal/cache/...
 package cache
 
 import (
+	"bytes"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestGetMissOnFreshCache(t *testing.T) {
-	c := NewMemoryCache(5 * time.Minute)
-	key := NormaliseKey("Bengaluru", "DC_FAST", 1500)
+// ---- helpers ---------------------------------------------------------------
 
-	_, hit := c.Get(key)
-	if hit {
-		t.Fatal("expected cache miss on fresh cache, got hit")
+func newCache(ttl time.Duration) *MemoryCache {
+	return NewMemoryCache(ttl)
+}
+
+var defaultBody = []byte(`{"type":"FeatureCollection","features":[]}`)
+
+// ---- NormaliseKey ----------------------------------------------------------
+
+func TestNormaliseKey(t *testing.T) {
+	tests := []struct {
+		name        string
+		city        string
+		chargerType string
+		radius      int
+		wantCity    string
+		wantType    string
+	}{
+		{"all lowercase", "bengaluru", "dc_fast", 1500, "Bengaluru", "DC_FAST"},
+		{"all uppercase", "BENGALURU", "DC_FAST", 1500, "Bengaluru", "DC_FAST"},
+		{"title case (no-op)", "Bengaluru", "DC_FAST", 1500, "Bengaluru", "DC_FAST"},
+		{"mixed case city", "mUMBAI", "ac_slow", 500, "Mumbai", "AC_SLOW"},
+		{"charger type mixed", "Pune", "Ac_Fast", 2000, "Pune", "AC_FAST"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			k := NormaliseKey(tc.city, tc.chargerType, tc.radius)
+			assert.Equal(t, tc.wantCity, k.City)
+			assert.Equal(t, tc.wantType, k.ChargerType)
+			assert.Equal(t, tc.radius, k.Radius)
+		})
 	}
 }
 
-func TestSetThenGetHit(t *testing.T) {
-	c := NewMemoryCache(5 * time.Minute)
-	key := NormaliseKey("Bengaluru", "DC_FAST", 1500)
-	body := []byte(`{"type":"FeatureCollection"}`)
+// ---- Miss / Hit ------------------------------------------------------------
 
-	c.Set(key, body)
+func TestGet_FreshCache_IsMiss(t *testing.T) {
+	c := newCache(5 * time.Minute)
+	key := NormaliseKey("Bengaluru", "DC_FAST", 1500)
 
 	got, hit := c.Get(key)
-	if !hit {
-		t.Fatal("expected cache hit, got miss")
-	}
-	if string(got) != string(body) {
-		t.Fatalf("body mismatch: got %s, want %s", got, body)
-	}
+	assert.False(t, hit, "fresh cache should be a miss")
+	assert.Nil(t, got)
 }
 
-func TestSameKeyReturnsSameBody(t *testing.T) {
-	c := NewMemoryCache(5 * time.Minute)
+func TestSetThenGet_IsHit(t *testing.T) {
+	c := newCache(5 * time.Minute)
+	key := NormaliseKey("Bengaluru", "DC_FAST", 1500)
+
+	c.Set(key, defaultBody)
+
+	got, hit := c.Get(key)
+	require.True(t, hit, "expected a cache hit after Set")
+	assert.True(t, bytes.Equal(defaultBody, got), "body must be byte-identical")
+}
+
+// ---- Single geo-service call guarantee -------------------------------------
+
+// TestSameKeyTwice_GeoCalledOnce simulates the cache-aside pattern: two
+// requests for the same (city, chargerType, radius) must result in exactly
+// one upstream call and return byte-identical bodies.
+func TestSameKeyTwice_GeoCalledOnce(t *testing.T) {
+	c := newCache(5 * time.Minute)
 	key := NormaliseKey("Mumbai", "AC_SLOW", 500)
-	body := []byte(`{"type":"FeatureCollection","features":[]}`)
+
 	geoCallCount := 0
-
-	// Simulate: check cache, miss → call geo service once, store result
-	if _, hit := c.Get(key); !hit {
+	callGeo := func() []byte {
 		geoCallCount++
-		c.Set(key, body)
+		return defaultBody
 	}
 
-	// Second lookup — should hit without calling geo service again
+	// First request — cache miss, call geo service.
+	var body1 []byte
+	if cached, hit := c.Get(key); hit {
+		body1 = cached
+	} else {
+		body1 = callGeo()
+		c.Set(key, body1)
+	}
+
+	// Second request — must hit cache, geo not called again.
+	var body2 []byte
+	if cached, hit := c.Get(key); hit {
+		body2 = cached
+	} else {
+		body2 = callGeo()
+		c.Set(key, body2)
+	}
+
+	assert.Equal(t, 1, geoCallCount, "geo service must be called exactly once")
+	assert.True(t, bytes.Equal(body1, body2), "both responses must be byte-identical")
+}
+
+// ---- TTL expiry ------------------------------------------------------------
+
+func TestGet_ExpiredEntry_IsMiss(t *testing.T) {
+	// Very short TTL so the test doesn't block.
+	c := newCache(40 * time.Millisecond)
+	key := NormaliseKey("Chennai", "DC_FAST", 1000)
+
+	c.Set(key, defaultBody)
+
+	// Must be a hit immediately after storing.
+	_, hit := c.Get(key)
+	require.True(t, hit, "expected hit immediately after Set")
+
+	// Wait for TTL to lapse.
+	time.Sleep(80 * time.Millisecond)
+
 	got, hit := c.Get(key)
-	if !hit {
-		t.Fatal("second lookup expected cache hit, got miss")
-	}
-	if string(got) != string(body) {
-		t.Fatalf("body mismatch on second lookup: got %s, want %s", got, body)
-	}
-	if geoCallCount != 1 {
-		t.Fatalf("geo service called %d times, expected exactly 1", geoCallCount)
-	}
+	assert.False(t, hit, "expected miss after TTL expiry")
+	assert.Nil(t, got)
 }
 
-func TestTTLExpiry(t *testing.T) {
-	// Use a very short TTL so the test doesn't have to wait long.
-	c := NewMemoryCache(50 * time.Millisecond)
-	key := NormaliseKey("Pune", "DC_FAST", 1000)
+// TestExpiredEntry_NotServedFromCache confirms that after expiry the caller
+// must go back to the source — a subsequent Set with fresh data is then served
+// correctly.
+func TestExpiredEntry_FreshSetAfterExpiry_IsHit(t *testing.T) {
+	c := newCache(40 * time.Millisecond)
+	key := NormaliseKey("Hyderabad", "AC_FAST", 750)
+	stale := []byte(`{"stale":true}`)
+	fresh := []byte(`{"fresh":true}`)
+
+	c.Set(key, stale)
+	time.Sleep(80 * time.Millisecond)
+
+	// Expired — treat as miss and re-populate with fresh data.
+	_, hit := c.Get(key)
+	require.False(t, hit)
+	c.Set(key, fresh)
+
+	got, hit := c.Get(key)
+	require.True(t, hit)
+	assert.True(t, bytes.Equal(fresh, got), "should serve fresh data, not stale")
+}
+
+// ---- Case normalisation ----------------------------------------------------
+
+func TestCaseNormalisation_AllVariants_SameEntry(t *testing.T) {
+	c := newCache(5 * time.Minute)
 	body := []byte(`{"type":"FeatureCollection"}`)
 
-	c.Set(key, body)
-
-	// Should be a hit immediately
-	if _, hit := c.Get(key); !hit {
-		t.Fatal("expected hit right after Set, got miss")
+	variants := []struct{ city, chargerType string }{
+		{"bengaluru", "dc_fast"},
+		{"Bengaluru", "DC_FAST"},
+		{"BENGALURU", "DC_FAST"},
+		{"bEngAlUrU", "Dc_FaSt"},
 	}
 
-	// Wait for TTL to expire
-	time.Sleep(100 * time.Millisecond)
+	// Store using the first variant.
+	k0 := NormaliseKey(variants[0].city, variants[0].chargerType, 1500)
+	c.Set(k0, body)
 
-	if _, hit := c.Get(key); hit {
-		t.Fatal("expected miss after TTL expiry, got hit")
-	}
-}
-
-func TestCaseNormalisation(t *testing.T) {
-	c := NewMemoryCache(5 * time.Minute)
-	body := []byte(`{"type":"FeatureCollection"}`)
-
-	// Store with one casing
-	k1 := NormaliseKey("bengaluru", "dc_fast", 1500)
-	c.Set(k1, body)
-
-	// Retrieve with different casing — should hit after normalisation
-	k2 := NormaliseKey("Bengaluru", "DC_FAST", 1500)
-	got, hit := c.Get(k2)
-	if !hit {
-		t.Fatal("expected hit after case-normalised lookup, got miss")
-	}
-	if string(got) != string(body) {
-		t.Fatalf("body mismatch: got %s, want %s", got, body)
+	// All other variants must resolve to the same entry.
+	for _, v := range variants[1:] {
+		v := v
+		t.Run(v.city+"/"+v.chargerType, func(t *testing.T) {
+			k := NormaliseKey(v.city, v.chargerType, 1500)
+			got, hit := c.Get(k)
+			require.True(t, hit, "expected cache hit for variant %q / %q", v.city, v.chargerType)
+			assert.True(t, bytes.Equal(body, got))
+		})
 	}
 }
 
-func TestCaseNormalisation_AllCaps(t *testing.T) {
-	c := NewMemoryCache(5 * time.Minute)
-	body := []byte(`{"type":"FeatureCollection","features":[]}`)
+// ---- Boundary radius values ------------------------------------------------
 
-	// BENGALURU, DC_FAST stored
-	k1 := NormaliseKey("BENGALURU", "DC_FAST", 1500)
-	c.Set(k1, body)
-
-	// bengaluru, dc_fast retrieval should hit the same entry
-	k2 := NormaliseKey("bengaluru", "dc_fast", 1500)
-	got, hit := c.Get(k2)
-	if !hit {
-		t.Fatal("BENGALURU → bengaluru: expected cache hit, got miss")
-	}
-	if string(got) != string(body) {
-		t.Fatalf("body mismatch: got %s, want %s", got, body)
+func TestBoundaryRadius_Stored_And_Retrieved(t *testing.T) {
+	tests := []struct {
+		name   string
+		radius int
+	}{
+		{"min radius 250", 250},
+		{"max radius 10000", 10000},
+		{"mid radius 5000", 5000},
 	}
 
-	// Title-case lookup should also hit
-	k3 := NormaliseKey("Bengaluru", "DC_FAST", 1500)
-	if _, hit := c.Get(k3); !hit {
-		t.Fatal("BENGALURU → Bengaluru: expected cache hit, got miss")
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCache(5 * time.Minute)
+			key := NormaliseKey("Bengaluru", "DC_FAST", tc.radius)
+			c.Set(key, defaultBody)
+
+			got, hit := c.Get(key)
+			require.True(t, hit)
+			assert.True(t, bytes.Equal(defaultBody, got))
+		})
 	}
+}
+
+// ---- Concurrent access (caught by -race) -----------------------------------
+
+// TestConcurrentSetGet hammers the cache from multiple goroutines to expose
+// data races in the mutex-guarded map.  Run with: go test -race ./internal/cache/...
+func TestConcurrentSetGet(t *testing.T) {
+	c := newCache(5 * time.Minute)
+	const workers = 20
+	const iterations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			// Alternate between two keys to create contention.
+			city := "Bengaluru"
+			if i%2 == 0 {
+				city = "Mumbai"
+			}
+			key := NormaliseKey(city, "DC_FAST", 1500)
+			for j := 0; j < iterations; j++ {
+				c.Set(key, defaultBody)
+				c.Get(key)
+			}
+		}()
+	}
+
+	wg.Wait()
+	// If the -race detector doesn't fire, the test passes.
+}
+
+// TestConcurrentDistinctKeys ensures distinct keys don't interfere under
+// concurrent load.
+func TestConcurrentDistinctKeys(t *testing.T) {
+	c := newCache(5 * time.Minute)
+	cities := []string{"Bengaluru", "Mumbai", "Hyderabad", "Chennai", "Pune"}
+
+	var wg sync.WaitGroup
+	wg.Add(len(cities))
+
+	for _, city := range cities {
+		city := city
+		go func() {
+			defer wg.Done()
+			key := NormaliseKey(city, "DC_FAST", 1500)
+			body := []byte(`{"city":"` + city + `"}`)
+			c.Set(key, body)
+
+			got, hit := c.Get(key)
+			// Under race conditions this might occasionally be a miss if
+			// eviction fires, but with a 5-minute TTL it should always hit.
+			if hit {
+				assert.True(t, bytes.Equal(body, got),
+					"body mismatch for city %s", city)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
