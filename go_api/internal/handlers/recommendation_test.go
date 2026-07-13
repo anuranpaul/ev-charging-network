@@ -40,6 +40,17 @@ func postRecommendation(t *testing.T, payload interface{}) *http.Request {
 	return r
 }
 
+// hasErrors returns true when the response body contains an "errors" array.
+func hasErrors(t *testing.T, body *bytes.Buffer) bool {
+	t.Helper()
+	var resp map[string]interface{}
+	if err := json.NewDecoder(bytes.NewReader(body.Bytes())).Decode(&resp); err != nil {
+		return false
+	}
+	_, ok := resp["errors"]
+	return ok
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -67,10 +78,72 @@ func TestRecommendation_ValidRequest(t *testing.T) {
 	}
 }
 
+func TestRecommendation_RadiusBoundary_MinValid(t *testing.T) {
+	srv := mockGeoService(t, http.StatusOK, `{"type":"FeatureCollection","features":[]}`)
+	defer srv.Close()
+
+	req := postRecommendation(t, map[string]interface{}{
+		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 250,
+	})
+	rec := httptest.NewRecorder()
+	newTestHandler(srv.URL)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("radius=250 (boundary): expected 200, got %d", rec.Code)
+	}
+}
+
+func TestRecommendation_RadiusBoundary_MaxValid(t *testing.T) {
+	srv := mockGeoService(t, http.StatusOK, `{"type":"FeatureCollection","features":[]}`)
+	defer srv.Close()
+
+	req := postRecommendation(t, map[string]interface{}{
+		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 10000,
+	})
+	rec := httptest.NewRecorder()
+	newTestHandler(srv.URL)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("radius=10000 (boundary): expected 200, got %d", rec.Code)
+	}
+}
+
 func TestRecommendation_InvalidRadius_TooLow(t *testing.T) {
 	handler := newTestHandler("http://unused")
 	req := postRecommendation(t, map[string]interface{}{
-		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 50,
+		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 249,
+	})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("radius=249: expected 400, got %d", rec.Code)
+	}
+	if !hasErrors(t, rec.Body) {
+		t.Error("expected 'errors' array in 400 body")
+	}
+}
+
+func TestRecommendation_InvalidRadius_TooHigh(t *testing.T) {
+	handler := newTestHandler("http://unused")
+	req := postRecommendation(t, map[string]interface{}{
+		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 10001,
+	})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("radius=10001: expected 400, got %d", rec.Code)
+	}
+	if !hasErrors(t, rec.Body) {
+		t.Error("expected 'errors' array in 400 body")
+	}
+}
+
+func TestRecommendation_MissingCity_Returns400WithErrors(t *testing.T) {
+	handler := newTestHandler("http://unused")
+	req := postRecommendation(t, map[string]interface{}{
+		"chargerType": "DC_FAST", "radius": 1500,
 	})
 	rec := httptest.NewRecorder()
 	handler(rec, req)
@@ -78,18 +151,44 @@ func TestRecommendation_InvalidRadius_TooLow(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
 	}
+	if !hasErrors(t, rec.Body) {
+		t.Error("expected 'errors' array in 400 body")
+	}
 }
 
-func TestRecommendation_InvalidRadius_TooHigh(t *testing.T) {
+func TestRecommendation_MissingChargerType_Returns400WithErrors(t *testing.T) {
 	handler := newTestHandler("http://unused")
 	req := postRecommendation(t, map[string]interface{}{
-		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 9999,
+		"city": "Bengaluru", "radius": 1500,
 	})
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !hasErrors(t, rec.Body) {
+		t.Error("expected 'errors' array in 400 body")
+	}
+}
+
+func TestRecommendation_MultipleInvalidFields_AllReported(t *testing.T) {
+	// city missing + radius out of range → both errors in the array.
+	handler := newTestHandler("http://unused")
+	req := postRecommendation(t, map[string]interface{}{
+		"chargerType": "DC_FAST", "radius": 50,
+	})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&body)
+	errs, ok := body["errors"].([]interface{})
+	if !ok || len(errs) < 2 {
+		t.Errorf("expected at least 2 errors, got %v", body["errors"])
 	}
 }
 
@@ -114,8 +213,29 @@ func TestRecommendation_UnsupportedCity(t *testing.T) {
 	}
 }
 
+func TestRecommendation_GeoService422_TranslatedToCanonical(t *testing.T) {
+	// Geo service returning 422 raw should be translated to our contract.
+	srv := mockGeoService(t, http.StatusUnprocessableEntity, `{"detail":"some internal validation"}`)
+	defer srv.Close()
+
+	handler := newTestHandler(srv.URL)
+	req := postRecommendation(t, map[string]interface{}{
+		"city": "Bengaluru", "chargerType": "DC_FAST", "radius": 1500,
+	})
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", rec.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&resp)
+	if _, ok := resp["supported"]; !ok {
+		t.Error("expected 'supported' field in translated 422 body")
+	}
+}
+
 func TestRecommendation_GeoServiceFailure_Returns503(t *testing.T) {
-	// Simulate a 5xx from the geo service.
 	srv := mockGeoService(t, http.StatusInternalServerError, `{"message":"internal error"}`)
 	defer srv.Close()
 
@@ -135,9 +255,8 @@ func TestRecommendation_GeoServiceFailure_Returns503(t *testing.T) {
 }
 
 func TestRecommendation_GeoServiceDown_Returns503(t *testing.T) {
-	// Point at a server that is already shut down.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	srv.Close() // closed immediately — any dial will fail
+	srv.Close()
 
 	handler := newTestHandler(srv.URL)
 	req := postRecommendation(t, map[string]interface{}{
@@ -160,5 +279,8 @@ func TestRecommendation_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+	if !hasErrors(t, rec.Body) {
+		t.Error("expected 'errors' array in 400 body for invalid JSON")
 	}
 }

@@ -74,6 +74,42 @@ func (c *GeoClient) Call(r *http.Request, rawBody []byte) CallResult {
 	}
 }
 
+// CallGET proxies a GET request to the given upstream URL, propagating the
+// X-Correlation-ID from the incoming request. It applies the same
+// timeout/503 semantics as Call.
+func (c *GeoClient) CallGET(r *http.Request, upstreamURL string) CallResult {
+	correlationID := r.Header.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(c.TimeoutSec)*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+	req.Header.Set("X-Correlation-ID", correlationID)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+
+	return CallResult{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		Headers:    resp.Header,
+	}
+}
+
 // Write503 writes a standard 503 with Retry-After: 30 to w.
 func Write503(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "30")

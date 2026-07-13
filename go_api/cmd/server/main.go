@@ -1,5 +1,5 @@
 // cmd/server/main.go — entry point: env validation, middleware chain, route registration.
-// All handler logic lives in internal/handlers; middleware in internal/middleware (TODO).
+// All handler logic lives in internal/handlers; middleware in internal/middleware.
 package main
 
 import (
@@ -13,6 +13,7 @@ import (
 	"github.com/anuranpaul/ev-charging-network/go_api/internal/cache"
 	"github.com/anuranpaul/ev-charging-network/go_api/internal/config"
 	"github.com/anuranpaul/ev-charging-network/go_api/internal/handlers"
+	"github.com/anuranpaul/ev-charging-network/go_api/internal/middleware"
 	"github.com/anuranpaul/ev-charging-network/go_api/internal/proxy"
 	"github.com/google/uuid"
 )
@@ -85,13 +86,21 @@ func main() {
 	mux.HandleFunc("/cities", handlers.CitiesHandler)
 	mux.HandleFunc("/chargers", handlers.ChargersHandler(geoProxy))
 	mux.HandleFunc("/recommendation", handlers.RecommendationHandler(geoProxy, memCache))
+	mux.HandleFunc("/analysis", handlers.AnalysisHandler(geoProxy))
 
+	// Middleware chain (outermost first):
+	//   correlationID → logger → CORS → auth → mux
+	origins := middleware.ParseOrigins(cfg.CORSOrigins)
 	var handler http.Handler = mux
 	handler = auth.APIKeyMiddleware(cfg.APIKey)(handler)
+	handler = middleware.CORSMiddleware(origins)(handler)
 	handler = loggingMiddleware(handler)
 	handler = correlationIDMiddleware(handler)
 
-	log.Printf("chargewise-india api-go listening on :%s (geo_service_url=%s)", cfg.Port, cfg.GeoServiceURL)
+	log.Printf(
+		"chargewise-india api-go listening on :%s (geo_service_url=%s)",
+		cfg.Port, cfg.GeoServiceURL,
+	)
 	if err := http.ListenAndServe(":"+cfg.Port, handler); err != nil {
 		log.Fatal(err)
 	}

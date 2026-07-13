@@ -95,3 +95,28 @@ func TestCaseNormalisation(t *testing.T) {
 		t.Fatalf("body mismatch: got %s, want %s", got, body)
 	}
 }
+
+func TestCaseNormalisation_AllCaps(t *testing.T) {
+	c := NewMemoryCache(5 * time.Minute)
+	body := []byte(`{"type":"FeatureCollection","features":[]}`)
+
+	// BENGALURU, DC_FAST stored
+	k1 := NormaliseKey("BENGALURU", "DC_FAST", 1500)
+	c.Set(k1, body)
+
+	// bengaluru, dc_fast retrieval should hit the same entry
+	k2 := NormaliseKey("bengaluru", "dc_fast", 1500)
+	got, hit := c.Get(k2)
+	if !hit {
+		t.Fatal("BENGALURU → bengaluru: expected cache hit, got miss")
+	}
+	if string(got) != string(body) {
+		t.Fatalf("body mismatch: got %s, want %s", got, body)
+	}
+
+	// Title-case lookup should also hit
+	k3 := NormaliseKey("Bengaluru", "DC_FAST", 1500)
+	if _, hit := c.Get(k3); !hit {
+		t.Fatal("BENGALURU → Bengaluru: expected cache hit, got miss")
+	}
+}

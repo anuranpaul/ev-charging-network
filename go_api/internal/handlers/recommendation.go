@@ -18,11 +18,21 @@ type recommendationRequest struct {
 	Radius      int    `json:"radius"`
 }
 
+// fieldError is a single field-level validation error for the errors array.
+type fieldError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
 // RecommendationHandler implements cache-aside:
 //
 //	check cache → miss → proxy → store 2xx → return with X-Cache header.
 //
 // Protected — requires X-API-Key.
+//
+// Validation contract (Req 4 AC-3/AC-4):
+//   - Missing/invalid field(s)  → 400 {"errors": [...]}
+//   - Unsupported city          → 422 {"message": "...", "supported": [...]}
 func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -32,27 +42,45 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "failed to read request body"})
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"errors": []fieldError{{Field: "body", Message: "failed to read request body"}},
+			})
 			return
 		}
 		defer r.Body.Close()
 
 		var req recommendationRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid JSON body"})
-			return
-		}
-
-		// Validate radius (geo service constraint: 100–5000 m from design doc).
-		if req.Radius < 100 || req.Radius > 5000 {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-				"message": "radius must be between 100 and 5000 metres",
+				"errors": []fieldError{{Field: "body", Message: "invalid JSON body"}},
 			})
 			return
 		}
 
-		// Validate city against canonical registry.
-		normCity := strings.ToTitle(req.City[:1]) + strings.ToLower(req.City[1:])
+		// Collect all field-level validation errors before returning.
+		var errs []fieldError
+
+		if strings.TrimSpace(req.City) == "" {
+			errs = append(errs, fieldError{Field: "city", Message: "city is required"})
+		}
+		if strings.TrimSpace(req.ChargerType) == "" {
+			errs = append(errs, fieldError{Field: "chargerType", Message: "chargerType is required"})
+		}
+		// Design doc Req 4 AC-3: valid range is 250–10000 m.
+		if req.Radius < 250 || req.Radius > 10000 {
+			errs = append(errs, fieldError{
+				Field:   "radius",
+				Message: "radius must be between 250 and 10000 metres",
+			})
+		}
+
+		if len(errs) > 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{"errors": errs})
+			return
+		}
+
+		// Validate city against canonical registry (Req 4 AC-4).
+		normCity := normaliseCity(req.City)
 		if !isSupportedCity(normCity) {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
 				"message":   "City not supported.",
@@ -61,7 +89,7 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 			return
 		}
 
-		cacheKey := cache.NormaliseKey(req.City, req.ChargerType, req.Radius)
+		cacheKey := cache.NormaliseKey(normCity, req.ChargerType, req.Radius)
 
 		// Cache hit path.
 		if cached, hit := memCache.Get(cacheKey); hit {
@@ -84,6 +112,17 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 			return
 		}
 
+		// Translate any 422 that leaks up from the geo service into our
+		// canonical format so the API contract is consistent regardless of
+		// what the upstream returns.
+		if result.StatusCode == http.StatusUnprocessableEntity {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+				"message":   "City not supported.",
+				"supported": SupportedCities,
+			})
+			return
+		}
+
 		for k, vv := range result.Headers {
 			for _, v := range vv {
 				w.Header().Add(k, v)
@@ -98,6 +137,16 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 		w.WriteHeader(result.StatusCode)
 		w.Write(result.Body)
 	}
+}
+
+// normaliseCity returns the city name title-cased for canonical comparison
+// (e.g. "BENGALURU" and "bengaluru" both become "Bengaluru").
+func normaliseCity(city string) string {
+	city = strings.TrimSpace(city)
+	if city == "" {
+		return ""
+	}
+	return strings.ToUpper(city[:1]) + strings.ToLower(city[1:])
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
