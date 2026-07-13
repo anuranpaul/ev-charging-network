@@ -1,4 +1,5 @@
-// cmd/server/main.go — entry point: env validation, middleware chain, route registration.
+// cmd/server/main.go — entry point: env validation, middleware chain, route
+// registration, and graceful shutdown.
 // All handler logic lives in internal/handlers; middleware in internal/middleware.
 package main
 
@@ -7,6 +8,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/anuranpaul/ev-charging-network/go_api/internal/auth"
@@ -89,19 +93,59 @@ func main() {
 	mux.HandleFunc("/analysis", handlers.AnalysisHandler(geoProxy))
 
 	// Middleware chain (outermost first):
-	//   correlationID → logger → CORS → auth → mux
+	//   correlationID → logger → recovery → CORS → auth → mux
+	//
+	// Recovery sits inside correlationID/logger so that:
+	//   - The correlation ID is already on the response header when the 500 is
+	//     written (clients can correlate the error back to their request).
+	//   - The access log entry is still emitted with the correct status code
+	//     (statusRecorder captures the 500 written by RecoveryMiddleware).
 	origins := middleware.ParseOrigins(cfg.CORSOrigins)
 	var handler http.Handler = mux
 	handler = auth.APIKeyMiddleware(cfg.APIKey)(handler)
 	handler = middleware.CORSMiddleware(origins)(handler)
+	handler = middleware.RecoveryMiddleware(handler)
 	handler = loggingMiddleware(handler)
 	handler = correlationIDMiddleware(handler)
 
-	log.Printf(
-		"chargewise-india api-go listening on :%s (geo_service_url=%s)",
-		cfg.Port, cfg.GeoServiceURL,
-	)
-	if err := http.ListenAndServe(":"+cfg.Port, handler); err != nil {
-		log.Fatal(err)
+	srv := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: handler,
+		// Prevent slow clients from holding connections open indefinitely.
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Start the server in a goroutine so main can proceed to the signal block.
+	serverErr := make(chan error, 1)
+	go func() {
+		log.Printf(
+			"chargewise-india api-go listening on :%s (geo_service_url=%s)",
+			cfg.Port, cfg.GeoServiceURL,
+		)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// Block until a termination signal arrives or the server exits on its own.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErr:
+		log.Fatalf("server error: %v", err)
+	case sig := <-quit:
+		log.Printf("received signal %s — shutting down gracefully", sig)
+	}
+
+	// Give in-flight requests up to 10 s to complete before forcefully closing.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("graceful shutdown failed: %v", err)
+	}
+	log.Println("server stopped cleanly")
 }
