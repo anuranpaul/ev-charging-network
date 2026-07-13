@@ -68,6 +68,8 @@ func RecommendationHandler(geoProxy *proxy.GeoClient, memCache *cache.MemoryCach
 		}
 		if strings.TrimSpace(req.ChargerType) == "" {
 			errs = append(errs, fieldError{Field: "chargerType", Message: "chargerType is required"})
+		} else if !validChargerTypes[req.ChargerType] {
+			errs = append(errs, fieldError{Field: "chargerType", Message: "chargerType must be one of SLOW, FAST, DC_FAST"})
 		}
 		// Design doc Req 4 AC-3: valid range is 250–10000 m.
 		if req.Radius < 250 || req.Radius > 10000 {

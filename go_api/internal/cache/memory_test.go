@@ -33,8 +33,8 @@ func TestNormaliseKey(t *testing.T) {
 		{"all lowercase", "bengaluru", "dc_fast", 1500, "Bengaluru", "DC_FAST"},
 		{"all uppercase", "BENGALURU", "DC_FAST", 1500, "Bengaluru", "DC_FAST"},
 		{"title case (no-op)", "Bengaluru", "DC_FAST", 1500, "Bengaluru", "DC_FAST"},
-		{"mixed case city", "mUMBAI", "ac_slow", 500, "Mumbai", "AC_SLOW"},
-		{"charger type mixed", "Pune", "Ac_Fast", 2000, "Pune", "AC_FAST"},
+		{"mixed case city", "mUMBAI", "slow", 500, "Mumbai", "SLOW"},
+		{"charger type mixed", "Pune", "Fast", 2000, "Pune", "FAST"},
 	}
 
 	for _, tc := range tests {
@@ -77,7 +77,7 @@ func TestSetThenGet_IsHit(t *testing.T) {
 // one upstream call and return byte-identical bodies.
 func TestSameKeyTwice_GeoCalledOnce(t *testing.T) {
 	c := newCache(5 * time.Minute)
-	key := NormaliseKey("Mumbai", "AC_SLOW", 500)
+	key := NormaliseKey("Mumbai", "SLOW", 500)
 
 	geoCallCount := 0
 	callGeo := func() []byte {

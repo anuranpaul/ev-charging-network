@@ -192,8 +192,18 @@ func TestRecommendation_MissingFields_Returns400WithErrorsArray(t *testing.T) {
 			wantErrFields: []string{"city"},
 		},
 		{
+			name:          "city empty spaces",
+			payload:       map[string]interface{}{"city": "   ", "chargerType": "DC_FAST", "radius": 1500},
+			wantErrFields: []string{"city"},
+		},
+		{
 			name:          "missing chargerType",
 			payload:       map[string]interface{}{"city": "Bengaluru", "radius": 1500},
+			wantErrFields: []string{"chargerType"},
+		},
+		{
+			name:          "invalid chargerType value",
+			payload:       map[string]interface{}{"city": "Bengaluru", "chargerType": "ULTRA_FAST", "radius": 1500},
 			wantErrFields: []string{"chargerType"},
 		},
 		{
@@ -260,7 +270,6 @@ func TestRecommendation_UnsupportedCity_Returns422(t *testing.T) {
 		city string
 	}{
 		{"unknown city Delhi", "Delhi"},
-		{"empty string after trim", "   "},
 		{"city not in registry", "Kolkata"},
 	}
 
@@ -369,7 +378,7 @@ func TestRecommendation_503ThenSuccess_CachesSuccess(t *testing.T) {
 
 	memCache := cache.NewMemoryCache(5 * time.Minute)
 	payload := map[string]interface{}{
-		"city": "Mumbai", "chargerType": "AC_SLOW", "radius": 500,
+		"city": "Mumbai", "chargerType": "SLOW", "radius": 500,
 	}
 
 	// Request 1 → 503, nothing cached.

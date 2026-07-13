@@ -11,9 +11,9 @@ import (
 // validChargerTypes is the set of charger type strings accepted by the geo
 // service.  Kept in sync with the Pydantic ChargerType enum.
 var validChargerTypes = map[string]bool{
+	"SLOW":    true,
+	"FAST":    true,
 	"DC_FAST": true,
-	"AC_SLOW": true,
-	"AC_FAST": true,
 }
 
 // AnalysisHandler proxies GET /analysis?city=&chargerType= to the geo service.
