@@ -53,10 +53,23 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   });
 
   if (!response.ok) {
-    const error = new Error(`API error ${response.status}: ${response.statusText}`) as Error & {
-      status: number;
-    };
+    // Attempt to parse the error body so callers can surface structured
+    // messages (field names, missing datasets, Retry-After, etc.).
+    let errorBody: unknown = null;
+    try {
+      errorBody = await response.json();
+    } catch {
+      // Non-JSON error bodies are fine — errorBody stays null.
+    }
+
+    const retryAfter = response.headers.get('Retry-After');
+
+    const error = new Error(
+      `API error ${response.status}: ${response.statusText}`,
+    ) as Error & { status: number; body: unknown; retryAfter: string | null };
     error.status = response.status;
+    error.body = errorBody;
+    error.retryAfter = retryAfter;
     throw error;
   }
 

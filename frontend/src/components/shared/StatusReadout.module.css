@@ -104,3 +104,31 @@
     animation: none;
   }
 }
+
+/* ── Pre-query prompt ────────────────────────────────────────────────────── */
+
+/*
+ * Shown only before any recommendation has been run.
+ * Uses body text styling (not mono) because it's prose, not data.
+ * The three field names are highlighted in a slightly brighter tone
+ * so they read as the salient nouns in the sentence.
+ */
+
+.prompt {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.promptField {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}

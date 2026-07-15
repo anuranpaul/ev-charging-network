@@ -37,6 +37,14 @@ interface ValidationErrors {
 export interface SelectionPanelProps {
   onSubmit: (selection: Required<SelectionState>) => void;
   isLoading?: boolean;
+  /** City currently being scored — used to build the in-flight label. */
+  loadingCity?: string | null;
+  /**
+   * Server-side field errors from a 400 response — keyed by field name.
+   * Merged into the local validation errors so they appear inline, identical
+   * in treatment to client-side validation failures.
+   */
+  serverFieldErrors?: { city?: string; chargerType?: string; radius?: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -71,27 +79,37 @@ function validate(
 // Component
 // ---------------------------------------------------------------------------
 
-export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelProps) {
-  const [city, setCity]             = useState<string | null>(null);
+export function SelectionPanel({
+  onSubmit,
+  isLoading = false,
+  loadingCity = null,
+  serverFieldErrors = {},
+}: SelectionPanelProps) {
+  const [city, setCity]               = useState<string | null>(null);
   const [chargerType, setChargerType] = useState<ChargerType | null>(null);
-  const [radius, setRadius]         = useState<number>(RADIUS_DEFAULT);
-  const [errors, setErrors]         = useState<ValidationErrors>({});
+  const [radius, setRadius]           = useState<number>(RADIUS_DEFAULT);
+  // Local validation errors — merged with serverFieldErrors for display.
+  const [localErrors, setLocalErrors] = useState<ValidationErrors>({});
+
+  // Merge server errors on top of local errors so server messages are
+  // visible even when no local validation was triggered.
+  const errors: ValidationErrors = { ...localErrors, ...serverFieldErrors };
 
   const handleCityChange = useCallback((newCity: string) => {
     setCity(newCity);
     setChargerType(null);
     setRadius(RADIUS_DEFAULT);
-    setErrors({});
+    setLocalErrors({});
   }, []);
 
   const handleChargerTypeChange = useCallback((type: ChargerType) => {
     setChargerType(type);
-    setErrors((prev) => ({ ...prev, chargerType: undefined }));
+    setLocalErrors((prev) => ({ ...prev, chargerType: undefined }));
   }, []);
 
   const handleRadiusChange = useCallback((value: number) => {
     setRadius(value);
-    setErrors((prev) => ({ ...prev, radius: undefined }));
+    setLocalErrors((prev) => ({ ...prev, radius: undefined }));
   }, []);
 
   const handleSubmit = useCallback(
@@ -99,9 +117,10 @@ export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelPr
       event.preventDefault();
       const validationErrors = validate(city, chargerType, radius);
       if (Object.keys(validationErrors).length > 0) {
-        setErrors(validationErrors);
+        setLocalErrors(validationErrors);
         return;
       }
+      setLocalErrors({});
       onSubmit({
         city: city as string,
         chargerType: chargerType as ChargerType,
@@ -146,7 +165,7 @@ export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelPr
         />
       </div>
 
-      {/* Submit */}
+      {/* Submit — primary CTA, deliberately the most prominent element */}
       <div className={s.footer}>
         <button
           type="submit"
@@ -154,7 +173,9 @@ export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelPr
           disabled={isLoading}
           aria-busy={isLoading}
         >
-          {isLoading ? 'Finding locations…' : 'Find locations'}
+          {isLoading
+            ? (loadingCity ? `Scoring candidates for ${loadingCity}…` : 'Scoring candidates…')
+            : 'Recommend locations'}
         </button>
       </div>
     </form>

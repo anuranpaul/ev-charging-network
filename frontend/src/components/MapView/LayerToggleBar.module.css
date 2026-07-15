@@ -177,3 +177,61 @@
   color: #e05252;
   flex-shrink: 0;
 }
+
+/* ── Dim banner ──────────────────────────────────────────────────────────── */
+
+/*
+ * Appears between the heading and the toggle rows when base layers are
+ * currently rendered at reduced opacity (candidates are the visual focus).
+ * Kept deliberately understated — just enough to communicate the state and
+ * offer one-click restore without competing with the layer rows below it.
+ */
+
+.dimBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--line-grid);
+  background: color-mix(in srgb, var(--line-grid) 30%, transparent);
+}
+
+.dimLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  /* Italic signals a transient/temporary state rather than a permanent label */
+  font-style: italic;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.restoreBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  /* type */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  /* Use accent colour so the action stands out from the dim label */
+  color: var(--accent-signal);
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  transition: opacity 0.12s;
+}
+
+.restoreBtn:hover {
+  opacity: 0.8;
+}
+
+.restoreBtn:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-radius: 2px;
+}

@@ -258,3 +258,334 @@
   max-width: 220px;
   margin: 0;
 }
+
+/* ── Loading panel ───────────────────────────────────────────────────────── */
+
+/*
+ * The loading panel renders immediately when isLoading becomes true,
+ * replacing (or pre-empting) the candidate list. It mimics the panel
+ * structure so the layout doesn't jump when results arrive.
+ */
+
+.loadingPanel {
+  /* same structural treatment as .panel — nothing extra needed */
+}
+
+/* ── Inline spinner — sits beside the status line in the header ─────────── */
+
+.spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--text-secondary);
+  border-top-color: var(--accent-signal);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: sp-spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 1px;
+}
+
+@keyframes sp-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Loading status text — sits in .headerMeta, slightly brighter than normal */
+.loadingStatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+
+/* ── Skeleton rows ───────────────────────────────────────────────────────── */
+
+/*
+ * Each skeleton row mirrors CandidateRow's three-column layout
+ * (rank pill · body bar · score pill) using purely positional spans
+ * with a shimmer sweep animation.
+ */
+
+.skeletonRow {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line-grid);
+}
+
+/* Shared shimmer base */
+.skeletonRank,
+.skeletonBody,
+.skeletonScore {
+  display: block;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--line-grid) 80%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--surface-raised) 35%, transparent) 40%,
+    color-mix(in srgb, var(--surface-raised) 35%, transparent) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-position: 150% 0;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Stagger shimmer per child so rows don't pulse in unison */
+.skeletonRow:nth-child(2) .skeletonRank,
+.skeletonRow:nth-child(2) .skeletonBody,
+.skeletonRow:nth-child(2) .skeletonScore { animation-delay: 0.1s; }
+
+.skeletonRow:nth-child(3) .skeletonRank,
+.skeletonRow:nth-child(3) .skeletonBody,
+.skeletonRow:nth-child(3) .skeletonScore { animation-delay: 0.2s; }
+
+.skeletonRow:nth-child(4) .skeletonRank,
+.skeletonRow:nth-child(4) .skeletonBody,
+.skeletonRow:nth-child(4) .skeletonScore { animation-delay: 0.3s; }
+
+.skeletonRow:nth-child(5) .skeletonRank,
+.skeletonRow:nth-child(5) .skeletonBody,
+.skeletonRow:nth-child(5) .skeletonScore { animation-delay: 0.4s; }
+
+.skeletonRow:nth-child(6) .skeletonRank,
+.skeletonRow:nth-child(6) .skeletonBody,
+.skeletonRow:nth-child(6) .skeletonScore { animation-delay: 0.5s; }
+
+.skeletonRow:nth-child(7) .skeletonRank,
+.skeletonRow:nth-child(7) .skeletonBody,
+.skeletonRow:nth-child(7) .skeletonScore { animation-delay: 0.6s; }
+
+.skeletonRow:nth-child(8) .skeletonRank,
+.skeletonRow:nth-child(8) .skeletonBody,
+.skeletonRow:nth-child(8) .skeletonScore { animation-delay: 0.7s; }
+
+@keyframes sk-shimmer {
+  0%   { background-position: 150% 0; }
+  100% { background-position: -50% 0; }
+}
+
+/* Rank pill — fixed width to match rank badge */
+.skeletonRank {
+  width: 22px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Body bar — variable width set via --sk-width custom property */
+.skeletonBody {
+  flex: 1;
+  height: 12px;
+  max-width: var(--sk-width, 75%);
+}
+
+/* Score pill — fixed width to match score badge */
+.skeletonScore {
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  .skeletonRank,
+  .skeletonBody,
+  .skeletonScore {
+    animation: none;
+    background-image: none;
+  }
+}
+
+/* ── Error panel ─────────────────────────────────────────────────────────── */
+
+/*
+ * Three distinct layouts share this shell, differentiated only by the
+ * content inside .errorBody. The icon + title header is common to all.
+ *
+ * Colours: error red (#e05252) is the same token used in SelectionPanel
+ * inline errors so the design reads consistently.
+ */
+
+.errorPanel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+
+.errorHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.errorIcon {
+  font-size: 16px;
+  line-height: 1;
+  color: #e05252;
+  flex-shrink: 0;
+  /* Prevent the Unicode warning sign from inheriting body letter-spacing */
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.errorTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #e05252;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* ── Body ── */
+
+.errorBody {
+  flex: 1;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+/* Primary message — what went wrong in one sentence. */
+.errorMessage {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  line-height: var(--leading-body);
+  margin: 0;
+}
+
+/* Hint — what to do next. Subdued so it doesn't compete with the message. */
+.errorHint {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  line-height: var(--leading-caption);
+  margin: 0;
+}
+
+/* ── 400: field error detail block ── */
+
+.errorDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, #e05252 8%, transparent);
+  border: 1px solid color-mix(in srgb, #e05252 30%, transparent);
+  border-radius: 5px;
+}
+
+.errorFieldLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #e05252;
+}
+
+.errorFieldMessage {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-primary);
+  line-height: var(--leading-caption);
+}
+
+/* ── 422: missing dataset list ── */
+
+.errorSubLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.datasetList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.datasetItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-mono);
+}
+
+.datasetDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e05252;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ── 503 / generic: retry button ── */
+
+.retryBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  /* layout */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  align-self: flex-start;
+  /* chrome */
+  background: transparent;
+  border: 1px solid var(--text-secondary);
+  border-radius: 5px;
+  /* type */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.retryBtn:hover {
+  background: color-mix(in srgb, var(--line-grid) 70%, transparent);
+  border-color: var(--text-primary);
+}
+
+.retryBtn:active {
+  background: color-mix(in srgb, var(--line-grid) 100%, transparent);
+}
+
+.retryBtn:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent-signal);
+}

@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useId, useMemo, useState } from 'react';
+import type { QueryError } from '../../types/domain';
 import type { CandidateFeature, RecommendationResponse } from '../../types/geojson';
 import { CandidateRow } from './CandidateRow';
 import s from './SidePanel.module.css';
@@ -78,6 +79,16 @@ export interface SidePanelProps {
   response: RecommendationResponse | null;
   selectedRank: number | null;
   onCandidateSelect: (candidate: CandidateFeature) => void;
+  /** True while POST /recommendation is in flight. */
+  isLoading?: boolean;
+  /** City being scored — shown in the loading panel status line. */
+  loadingCity?: string | null;
+  /** Charger type being scored — shown in the loading panel status line. */
+  loadingChargerType?: string | null;
+  /** Typed error from the last failed query — drives the error panel. */
+  queryError?: QueryError | null;
+  /** Called when the user clicks "Retry" in the 503 error panel. */
+  onRetry?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +106,188 @@ function SortIndicator({ col, activeCol, dir }: {
     <span className={s.sortIndicator} aria-hidden="true">
       {dir === 'asc' ? '▴' : '▾'}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading panel — shown while POST /recommendation is in flight
+// ---------------------------------------------------------------------------
+
+interface LoadingPanelProps {
+  city: string | null;
+  chargerType: string | null;
+}
+
+function SkeletonRow({ width }: { width: string }) {
+  return (
+    <li className={s.skeletonRow} aria-hidden="true">
+      <span className={s.skeletonRank} />
+      <span className={s.skeletonBody} style={{ '--sk-width': width } as React.CSSProperties} />
+      <span className={s.skeletonScore} />
+    </li>
+  );
+}
+
+function LoadingPanel({ city, chargerType }: LoadingPanelProps) {
+  const label = city
+    ? `Scoring candidates for ${city}…`
+    : 'Scoring candidates…';
+
+  const typeLabel = chargerType
+    ? chargerType.replace('_', ' ').toLowerCase()
+    : null;
+
+  return (
+    <aside className={`${s.panel} ${s.loadingPanel}`} aria-label="Loading results" aria-busy="true">
+      {/* Header mirrors the real header's height so layout doesn't jump */}
+      <div className={s.header}>
+        <p className={s.headerTitle}>
+          {city ?? 'City'}
+          {typeLabel ? ` · ${typeLabel}` : ''}
+        </p>
+        <p className={`${s.headerMeta} ${s.loadingStatus}`}>
+          <span className={s.spinner} aria-hidden="true" />
+          {label}
+        </p>
+      </div>
+
+      {/* Skeleton rows — mock the candidate list */}
+      <ul className={s.list} role="list" aria-label="Loading candidates">
+        <SkeletonRow width="88%" />
+        <SkeletonRow width="72%" />
+        <SkeletonRow width="80%" />
+        <SkeletonRow width="65%" />
+        <SkeletonRow width="75%" />
+        <SkeletonRow width="60%" />
+        <SkeletonRow width="82%" />
+        <SkeletonRow width="70%" />
+      </ul>
+    </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Error panel — distinct layout per failure kind
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps an internal field key to a human-readable label so the 400 error
+ * message reads "City: …" rather than exposing the raw API field name.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  city: 'City',
+  chargerType: 'Charger type',
+  radius: 'Radius',
+};
+
+interface ErrorPanelProps {
+  error: QueryError;
+  onRetry?: () => void;
+}
+
+function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
+  return (
+    <aside className={`${s.panel} ${s.errorPanel}`} role="alert" aria-label="Query failed">
+      <div className={s.errorHeader}>
+        <span className={s.errorIcon} aria-hidden="true">⚠</span>
+        <p className={s.errorTitle}>
+          {error.kind === '400' && 'Invalid request'}
+          {error.kind === '422' && 'Incomplete data'}
+          {error.kind === '503' && 'Service unavailable'}
+          {error.kind === 'generic' && 'Request failed'}
+        </p>
+      </div>
+
+      <div className={s.errorBody}>
+        {/* ── 400: show which field the server rejected ── */}
+        {error.kind === '400' && (
+          <>
+            <p className={s.errorMessage}>
+              The server rejected a field in your request.
+            </p>
+            <div className={s.errorDetail}>
+              <span className={s.errorFieldLabel}>
+                {FIELD_LABELS[error.field] ?? error.field}
+              </span>
+              <span className={s.errorFieldMessage}>{error.message}</span>
+            </div>
+            <p className={s.errorHint}>
+              Adjust the highlighted field above and resubmit.
+            </p>
+          </>
+        )}
+
+        {/* ── 422: list the missing datasets ── */}
+        {error.kind === '422' && (
+          <>
+            <p className={s.errorMessage}>
+              {error.city
+                ? `${error.city} is not fully supported yet.`
+                : 'This city is not fully supported yet.'}
+            </p>
+            {error.missing_datasets.length > 0 && (
+              <>
+                <p className={s.errorSubLabel}>Missing datasets</p>
+                <ul className={s.datasetList}>
+                  {error.missing_datasets.map((ds) => (
+                    <li key={ds} className={s.datasetItem}>
+                      <span className={s.datasetDot} aria-hidden="true" />
+                      {ds}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <p className={s.errorHint}>
+              Try a different city or check back later.
+            </p>
+          </>
+        )}
+
+        {/* ── 503: retry-friendly with Retry-After seconds ── */}
+        {error.kind === '503' && (
+          <>
+            <p className={s.errorMessage}>
+              {error.retryAfterSeconds !== null
+                ? `Service temporarily unavailable — retrying is recommended in ${error.retryAfterSeconds} second${error.retryAfterSeconds === 1 ? '' : 's'}.`
+                : 'The geo-service is temporarily unreachable.'}
+            </p>
+            {onRetry && (
+              <button
+                type="button"
+                className={s.retryBtn}
+                onClick={onRetry}
+                aria-label="Retry the recommendation request"
+              >
+                <span aria-hidden="true">↺</span>
+                Retry
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ── generic: something else went wrong ── */}
+        {error.kind === 'generic' && (
+          <>
+            <p className={s.errorMessage}>{error.message}</p>
+            {error.status !== null && (
+              <p className={s.errorHint}>HTTP {error.status}</p>
+            )}
+            {onRetry && (
+              <button
+                type="button"
+                className={s.retryBtn}
+                onClick={onRetry}
+                aria-label="Retry the recommendation request"
+              >
+                <span aria-hidden="true">↺</span>
+                Retry
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -122,7 +315,16 @@ function EmptyState() {
 // Component
 // ---------------------------------------------------------------------------
 
-export function SidePanel({ response, selectedRank, onCandidateSelect }: SidePanelProps) {
+export function SidePanel({
+  response,
+  selectedRank,
+  onCandidateSelect,
+  isLoading = false,
+  loadingCity = null,
+  loadingChargerType = null,
+  queryError = null,
+  onRetry,
+}: SidePanelProps) {
   const [sortCol, setSortCol]       = useState<SortColumn>('rank');
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
   const [displayCount, setDisplayCount] = useState(DISPLAY_COUNT_DEFAULT);
@@ -153,6 +355,14 @@ export function SidePanel({ response, selectedRank, onCandidateSelect }: SidePan
     const csv = buildCsv(visibleCandidates);
     downloadCsv(csv, `chargewise_${(response?.city ?? 'city').toLowerCase()}_candidates.csv`);
   }, [visibleCandidates, response]);
+
+  if (isLoading) {
+    return <LoadingPanel city={loadingCity} chargerType={loadingChargerType} />;
+  }
+
+  if (queryError) {
+    return <ErrorPanel error={queryError} onRetry={onRetry} />;
+  }
 
   if (!response) return <EmptyState />;
 

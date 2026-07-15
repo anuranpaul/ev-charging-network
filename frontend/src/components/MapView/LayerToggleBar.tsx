@@ -21,6 +21,13 @@ interface LayerToggleBarProps {
   layerStates: LayerDataMap;
   onToggle: (id: BaseLayerId) => void;
   disabled?: boolean;
+  /**
+   * True when base layers are currently rendered at reduced opacity because
+   * candidate results are the active visual focus.
+   */
+  isDimmed?: boolean;
+  /** Called when the user wants to restore base layers to full opacity. */
+  onRestoreOpacity?: () => void;
 }
 
 export function LayerToggleBar({
@@ -28,7 +35,12 @@ export function LayerToggleBar({
   layerStates,
   onToggle,
   disabled,
+  isDimmed = false,
+  onRestoreOpacity,
 }: LayerToggleBarProps) {
+  // Only show the restore affordance when there are active layers to restore.
+  const hasActiveLayers = activeLayers.size > 0;
+  const showRestoreBanner = isDimmed && hasActiveLayers;
   return (
     <div
       role="toolbar"
@@ -37,6 +49,23 @@ export function LayerToggleBar({
       className={s.panel}
     >
       <p className={s.heading} aria-hidden="true">Layers</p>
+
+      {/* Dimmed-opacity banner — shown when candidate results have caused
+          base layers to be rendered at reduced opacity. Lets the user
+          restore full opacity with one click without toggling each layer. */}
+      {showRestoreBanner && (
+        <div className={s.dimBanner}>
+          <span className={s.dimLabel}>Dimmed for clarity</span>
+          <button
+            type="button"
+            className={s.restoreBtn}
+            onClick={onRestoreOpacity}
+            aria-label="Restore base layers to full opacity"
+          >
+            Restore
+          </button>
+        </div>
+      )}
 
       {BASE_LAYERS.map((layer) => {
         const isActive  = activeLayers.has(layer.id);

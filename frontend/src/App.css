@@ -36,20 +36,29 @@ body {
 }
 
 /* ── Top bar ─────────────────────────────────────────────────────────────
-   Single fixed-height row. Flex: name on the left, status on the right.
+   Two-row left group: app name + tagline. Status dot right-aligned.
+   Height bumped to 52 px to accommodate the second line comfortably.
    ─────────────────────────────────────────────────────────────────────── */
 .cw-topbar {
   grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
+  /* Taller than the original 44 px to give the tagline room without cramping */
+  min-height: 52px;
   padding: 0 16px;
   background: var(--surface-panel);
   border-bottom: 1px solid var(--line-grid);
   /* Keep the bar on top of the absolutely-positioned selection card */
   position: relative;
   z-index: 30;
+}
+
+/* Left cluster: stacks name above tagline */
+.cw-topbar__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .cw-topbar__name {
@@ -60,6 +69,37 @@ body {
   color: var(--text-primary);
   margin: 0;
   line-height: 1;
+}
+
+/*
+ * Tagline — one sentence, recommendation-first.
+ * Kept at caption size so it doesn't compete with the app name,
+ * but full primary colour on the main clause and secondary on the
+ * "or explore…" aside, so the reading hierarchy is clear without
+ * needing bold/italic.
+ */
+.cw-topbar__tagline {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  color: var(--text-secondary);
+  margin: 0;
+  /* Prevent the line from wrapping on very narrow viewports */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The primary clause gets the brighter text colour */
+.cw-topbar__tagline-primary {
+  color: var(--text-primary);
+}
+
+/* Hide the tagline entirely below 480 px — the name alone is enough */
+@media (max-width: 480px) {
+  .cw-topbar__tagline {
+    display: none;
+  }
 }
 
 .cw-topbar__status {
@@ -238,5 +278,82 @@ body {
 @media (min-width: 601px) and (max-width: 900px) {
   .cw-selection-card {
     width: 240px;
+  }
+}
+
+/* ── Layer disclosure widget ─────────────────────────────────────────────
+   A <details>/<summary> that keeps the base-layer toggle bar hidden by
+   default, so a first-time user's attention goes straight to the primary
+   "Recommend locations" CTA rather than layer exploration controls.
+
+   Styled to read as clearly secondary relative to the selection card:
+   dimmer background, smaller text, no amber accent.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.cw-layer-disclosure {
+  /* reset <details> defaults */
+  list-style: none;
+}
+
+.cw-layer-disclosure__summary {
+  /* reset <summary> defaults */
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-panel) 78%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line-grid);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+
+  transition: background 0.15s, color 0.15s;
+}
+
+/* Remove the default disclosure triangle in Webkit */
+.cw-layer-disclosure__summary::-webkit-details-marker { display: none; }
+
+/* Chevron via pseudo-element — points right when closed, down when open */
+.cw-layer-disclosure__summary::before {
+  content: '›';
+  font-size: 14px;
+  line-height: 1;
+  transition: transform 0.18s;
+  display: inline-block;
+  opacity: 0.6;
+}
+
+.cw-layer-disclosure[open] .cw-layer-disclosure__summary::before {
+  transform: rotate(90deg);
+}
+
+.cw-layer-disclosure__summary:hover {
+  background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+  color: var(--text-primary);
+}
+
+.cw-layer-disclosure__summary:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* Panel that reveals when open — appears above the summary row */
+.cw-layer-disclosure__panel {
+  margin-bottom: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-layer-disclosure__summary::before {
+    transition: none;
   }
 }

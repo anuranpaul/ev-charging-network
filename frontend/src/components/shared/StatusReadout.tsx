@@ -157,31 +157,50 @@ export function StatusReadout({
       role="contentinfo"
       aria-label="Query summary"
     >
-      <StatCell
-        label="candidates"
-        animatedValue={displayedCandidates}
-        format={(n) => n.toLocaleString()}
-        flash={flashCandidates}
-      />
+      {/* Pre-query prompt — only visible before any recommendation has run.
+          Names the three output fields so users know what to expect. */}
+      {!response && (
+        <p className={s.prompt} aria-live="polite">
+          Run a recommendation to see{' '}
+          <span className={s.promptField}>candidate count</span>
+          {', '}
+          <span className={s.promptField}>coverage %</span>
+          {' and '}
+          <span className={s.promptField}>avg score</span>
+          {' here.'}
+        </p>
+      )}
 
-      <span className={s.sep} aria-hidden="true" />
+      {/* Stats — always rendered so the DOM is stable; values show — when empty */}
+      {response && (
+        <>
+          <StatCell
+            label="candidates"
+            animatedValue={displayedCandidates}
+            format={(n) => n.toLocaleString()}
+            flash={flashCandidates}
+          />
 
-      <StatCell
-        label="coverage"
-        animatedValue={displayedCoverage !== null ? Math.round(displayedCoverage * 10) : null}
-        format={(tenths) => `${(tenths / 10).toFixed(1)}%`}
-        flash={flashCoverage}
-        notAvailable={coveragePct === null}
-      />
+          <span className={s.sep} aria-hidden="true" />
 
-      <span className={s.sep} aria-hidden="true" />
+          <StatCell
+            label="coverage"
+            animatedValue={displayedCoverage !== null ? Math.round(displayedCoverage * 10) : null}
+            format={(tenths) => `${(tenths / 10).toFixed(1)}%`}
+            flash={flashCoverage}
+            notAvailable={coveragePct === null}
+          />
 
-      <StatCell
-        label="avg score"
-        animatedValue={displayedAvgScore}
-        format={(n) => String(n)}
-        flash={flashAvgScore}
-      />
+          <span className={s.sep} aria-hidden="true" />
+
+          <StatCell
+            label="avg score"
+            animatedValue={displayedAvgScore}
+            format={(n) => String(n)}
+            flash={flashAvgScore}
+          />
+        </>
+      )}
     </footer>
   );
 }

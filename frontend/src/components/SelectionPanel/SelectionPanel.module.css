@@ -260,37 +260,43 @@
 /* ── Submit button ──────────────────────────────────────────────────────── */
 
 .footer {
-  padding: 12px 16px 14px;
+  /* Extra padding so the CTA breathes — it's the primary action */
+  padding: 14px 16px 16px;
   border-top: 1px solid var(--line-grid);
 }
 
 .submitBtn {
   width: 100%;
-  padding: 9px 0;
+  /* Larger vertical padding than before: makes the tap target generous
+     and signals visual importance relative to the form fields above */
+  padding: 13px 0;
   background: var(--accent-signal);
   color: #14181F;              /* --bg-base as text — high contrast on amber */
-  font-family: var(--font-body);
-  font-size: var(--text-body);
-  font-weight: 600;
+  font-family: var(--font-display); /* Display face = more authority */
+  font-size: 1.0625rem;        /* 17 px — sits between body and h2 */
+  font-weight: 700;
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
   outline: none;
   letter-spacing: 0.01em;
-  transition: background 0.15s, box-shadow 0.15s, opacity 0.15s;
-  /* Ensure the button text doesn't inherit the display font from .title */
-  font-style: normal;
+  /* Warm ambient glow reinforces the accent fill */
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent-signal) 30%, transparent);
+  transition: background 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.1s;
 }
 
 .submitBtn:hover:not(:disabled) {
-  /* Lighten the amber slightly on hover */
   background: color-mix(in srgb, var(--accent-signal) 85%, #fff 15%);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-signal) 35%, transparent);
+  box-shadow:
+    0 2px 18px color-mix(in srgb, var(--accent-signal) 45%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent-signal) 30%, transparent);
+  transform: translateY(-1px);
 }
 
 .submitBtn:active:not(:disabled) {
   background: color-mix(in srgb, var(--accent-signal) 75%, #000 25%);
-  box-shadow: none;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--accent-signal) 20%, transparent);
+  transform: translateY(0);
 }
 
 .submitBtn:focus-visible {
@@ -300,9 +306,12 @@
 .submitBtn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
-/* Loading state — the spinner replaces the icon in JSX; just dampen the btn */
+/* Loading state — dampen while busy */
 .submitBtn[aria-busy='true'] {
   opacity: 0.75;
+  transform: none;
 }

@@ -11,6 +11,7 @@
  *   - recommendation response (null until first successful query)
  *   - selected candidate rank (shared between MapView and SidePanel)
  *   - query loading flag
+ *   - typed query error (null on success, QueryError on any API failure)
  *
  * The ApiKeyGate wraps everything so no component underneath can fire
  * a protected request before a key is in memory.
@@ -25,7 +26,8 @@ import { SelectionPanel } from './components/SelectionPanel';
 import { SidePanel } from './components/SidePanel';
 import { useHealthCheck } from './hooks/useHealthCheck';
 import { apiClient } from './services/apiClient';
-import type { SelectionState } from './types/domain';
+import type { SelectionState, QueryError } from './types/domain';
+import { parseQueryError } from './types/domain';
 import type { CandidateFeature, RecommendationResponse, AnalysisResponse } from './types/geojson';
 
 // ---------------------------------------------------------------------------
@@ -61,38 +63,61 @@ function ChargeWiseApp() {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
+  /** The city/charger being scored — held separately so the loading panel
+   *  can show "Scoring candidates for Bengaluru…" while the state
+   *  for the previous completed query is still visible briefly. */
+  const [loadingCity, setLoadingCity] = useState<string | null>(null);
+  const [loadingChargerType, setLoadingChargerType] = useState<string | null>(null);
+  /** Typed error from the last failed POST /recommendation. Cleared on
+   *  every new submit so a retry always starts clean. */
+  const [queryError, setQueryError] = useState<QueryError | null>(null);
+  /** Last selection used to submit — stored so the retry button in the
+   *  503 error panel can re-issue the exact same request. */
+  const [lastSelection, setLastSelection] = useState<Required<SelectionState> | null>(null);
 
   // ── Query handler ──────────────────────────────────────────────────────
+  const runQuery = useCallback(async (selection: Required<SelectionState>) => {
+    setIsLoading(true);
+    setQueryError(null);
+    setSelectedRank(null);
+    setActiveCity(selection.city);
+    setLoadingCity(selection.city);
+    setLoadingChargerType(selection.chargerType);
+    try {
+      const [recommendationData, analysisData] = await Promise.all([
+        apiClient.post<RecommendationResponse>(
+          '/recommendation',
+          {
+            city: selection.city,
+            chargerType: selection.chargerType,
+            radius: selection.radius,
+          },
+        ),
+        apiClient.get<AnalysisResponse>(
+          `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`
+        )
+      ]);
+      setResponse(recommendationData);
+      setAnalysis(analysisData);
+    } catch (err) {
+      setQueryError(parseQueryError(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const handleSelectionSubmit = useCallback(
-    async (selection: Required<SelectionState>) => {
-      setIsLoading(true);
-      setSelectedRank(null);
-      setActiveCity(selection.city);
-      try {
-        const [recommendationData, analysisData] = await Promise.all([
-          apiClient.post<RecommendationResponse>(
-            '/recommendation',
-            {
-              city: selection.city,
-              chargerType: selection.chargerType,
-              radius: selection.radius,
-            },
-          ),
-          apiClient.get<AnalysisResponse>(
-            `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`
-          )
-        ]);
-        setResponse(recommendationData);
-        setAnalysis(analysisData);
-      } catch {
-        // Errors are surfaced via the toast system (future); silently reset
-        // loading state for now so the form re-enables.
-      } finally {
-        setIsLoading(false);
-      }
+    (selection: Required<SelectionState>) => {
+      setLastSelection(selection);
+      void runQuery(selection);
     },
-    [],
+    [runQuery],
   );
+
+  /** Called by the 503 retry button — re-runs the last selection unchanged. */
+  const handleRetry = useCallback(() => {
+    if (lastSelection) void runQuery(lastSelection);
+  }, [lastSelection, runQuery]);
 
   // ── Candidate selection (shared between map marker click and list row) ─
   const handleCandidateSelect = useCallback((candidate: CandidateFeature) => {
@@ -105,13 +130,30 @@ function ChargeWiseApp() {
   // until GET /analysis is wired up.
 
   const hasResults = response !== null && response.features.length > 0;
+  // Show the side panel whenever we're loading, there's an error, or results exist.
+  const showSidePanel = isLoading || queryError !== null || hasResults;
+
+  // Map a 400 field error back to inline SelectionPanel validation — only
+  // city / chargerType / radius are valid field names from the API.
+  const serverFieldErrors: { city?: string; chargerType?: string; radius?: string } =
+    queryError?.kind === '400'
+      ? { [queryError.field]: queryError.message }
+      : {};
 
   return (
     <div className="cw-shell cw-root">
 
       {/* ── 1. Top bar ─────────────────────────────────────────────────── */}
       <header className="cw-topbar" role="banner">
-        <p className="cw-topbar__name">EV network India</p>
+        <div className="cw-topbar__identity">
+          <p className="cw-topbar__name">EV network India</p>
+          <p className="cw-topbar__tagline">
+            <span className="cw-topbar__tagline-primary">
+              Get ranked recommendations for new EV charging station sites in your city
+            </span>
+            {' '}— or explore existing infrastructure layers first.
+          </p>
+        </div>
         <StatusDot status={health} />
       </header>
 
@@ -124,6 +166,7 @@ function ChargeWiseApp() {
           candidates={response?.features ?? []}
           selectedRank={selectedRank}
           onCandidateSelect={handleCandidateSelect}
+          hasResults={hasResults}
         />
 
         {/* Floating selection card — always visible over the map */}
@@ -131,13 +174,16 @@ function ChargeWiseApp() {
           <SelectionPanel
             onSubmit={handleSelectionSubmit}
             isLoading={isLoading}
+            loadingCity={loadingCity}
+            serverFieldErrors={serverFieldErrors}
           />
         </div>
 
-        {/* Side panel slides in from the right when results exist */}
-        {hasResults && (
+        {/* Side panel slides in from the right when loading, errored, or
+            results exist. The panel renders skeleton / error panel / list. */}
+        {showSidePanel && (
           <aside
-            aria-label="Ranked candidates"
+            aria-label={isLoading ? 'Loading results' : queryError ? 'Query error' : 'Ranked candidates'}
             style={{
               position: 'absolute',
               top: 0,
@@ -158,6 +204,11 @@ function ChargeWiseApp() {
               response={response}
               selectedRank={selectedRank}
               onCandidateSelect={handleCandidateSelect}
+              isLoading={isLoading}
+              loadingCity={loadingCity}
+              loadingChargerType={loadingChargerType}
+              queryError={queryError}
+              onRetry={handleRetry}
             />
           </aside>
         )}

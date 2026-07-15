@@ -58,6 +58,12 @@ export interface MapViewProps {
   selectedRank: number | null;
   /** Called when the user clicks a marker — parent updates selectedRank. */
   onCandidateSelect: (candidate: CandidateFeature) => void;
+  /**
+   * When true, base layers are initially rendered at reduced opacity so
+   * candidate markers are the clear visual focus. The user can restore
+   * full opacity via the layer toggle bar.
+   */
+  hasResults?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,13 +80,41 @@ interface TooltipState {
 // Component
 // ---------------------------------------------------------------------------
 
-export function MapView({ city, candidates, selectedRank, onCandidateSelect }: MapViewProps) {
+/** Full and dimmed opacity values for base GeoJSON layers. */
+const BASE_LAYER_OPACITY_FULL   = 1.0;
+const BASE_LAYER_OPACITY_DIMMED = 0.25;
+
+export function MapView({ city, candidates, selectedRank, onCandidateSelect, hasResults = false }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
 
   const { layers, activeLayers, toggleLayer } = useLayerData(city);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+
+  /**
+   * Tracks whether the user has manually restored full opacity after a result
+   * arrived. Set to false whenever hasResults flips true (new query), so each
+   * fresh result set starts dimmed. Set to true when the user clicks "Restore".
+   */
+  const [opacityRestored, setOpacityRestored] = useState(false);
+
+  // When a new result set arrives, reset the restored flag so base layers
+  // dim again to foreground the fresh candidate markers.
+  const prevHasResultsRef = useRef(false);
+  useEffect(() => {
+    if (hasResults && !prevHasResultsRef.current) {
+      setOpacityRestored(false);
+    }
+    prevHasResultsRef.current = hasResults;
+  }, [hasResults]);
+
+  const isDimmed = hasResults && !opacityRestored;
+  const layerOpacity = isDimmed ? BASE_LAYER_OPACITY_DIMMED : BASE_LAYER_OPACITY_FULL;
+
+  const handleRestoreOpacity = useCallback(() => {
+    setOpacityRestored(true);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // 1. Mount MapLibre + Deck.gl overlay once.
@@ -170,6 +204,9 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect }: M
           lineWidthMinPixels: 1,
           pointRadiusMinPixels: 4,
           pointRadiusMaxPixels: 12,
+          // Deck.gl opacity (0–1) multiplies all colour alphas uniformly.
+          // Dimmed when candidates are present so markers read as primary.
+          opacity: layerOpacity,
         }),
       ];
     });
@@ -204,7 +241,7 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect }: M
     overlay.setProps({
       layers: candidateLayer ? [...baseLayers, candidateLayer] : baseLayers,
     });
-  }, [activeLayers, layers, candidates, selectedRank, handleMarkerClick]);
+  }, [activeLayers, layers, candidates, selectedRank, handleMarkerClick, layerOpacity]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -218,22 +255,32 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect }: M
         aria-label={city ? `Map centred on ${city}` : 'Map'}
       />
 
-      {/* Layer toggle bar — right edge, vertically centred in the stage */}
+      {/* Layer disclosure — collapsed by default so first-time users focus on
+           the primary "Recommend locations" action, not layer exploration.
+           Positioned bottom-right to stay out of the critical path visually. */}
       <div
         style={{
           position: 'absolute',
-          top: '50%',
+          bottom: 16,
           right: 10,
-          transform: 'translateY(-50%)',
           zIndex: 10,
         }}
       >
-        <LayerToggleBar
-          activeLayers={activeLayers}
-          layerStates={layers}
-          onToggle={toggleLayer}
-          disabled={!city}
-        />
+        <details className="cw-layer-disclosure">
+          <summary className="cw-layer-disclosure__summary">
+            Show existing infrastructure
+          </summary>
+          <div className="cw-layer-disclosure__panel">
+            <LayerToggleBar
+              activeLayers={activeLayers}
+              layerStates={layers}
+              onToggle={toggleLayer}
+              disabled={!city}
+              isDimmed={isDimmed}
+              onRestoreOpacity={handleRestoreOpacity}
+            />
+          </div>
+        </details>
       </div>
 
       {/* Candidate tooltip */}
