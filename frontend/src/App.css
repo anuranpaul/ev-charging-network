@@ -1,184 +1,242 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/* ─────────────────────────────────────────────────────────────────────────
+   App layout — ChargeWise shell
+   All colour and typography values reference tokens from tokens.css.
+   ───────────────────────────────────────────────────────────────────────── */
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-}
-
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
-}
-
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
-}
-
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
-}
-
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-#next-steps ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
-}
-
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
-}
-
-.ticks {
-  position: relative;
+/* Reset the Vite scaffold's centred column layout on the root element. */
+#root {
   width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border: none;
+  min-height: 100svh;
+  text-align: left;
+  display: block;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
+body {
+  margin: 0;
+  overflow: hidden; /* prevent body scroll; scroll lives inside panels */
+}
+
+/* ── Shell grid ──────────────────────────────────────────────────────────
+   Three rows: top bar (auto) · map stage (1fr) · bottom strip (auto)
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
+  height: 100svh;
+  width: 100vw;
+  background: var(--bg-base);
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────
+   Single fixed-height row. Flex: name on the left, status on the right.
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-topbar {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--line-grid);
+  /* Keep the bar on top of the absolutely-positioned selection card */
+  position: relative;
+  z-index: 30;
+}
+
+.cw-topbar__name {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1;
+}
+
+.cw-topbar__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+/* The pulsing dot — colour is applied inline from the status value. */
+.cw-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cw-status-dot--ok {
+  background: #22c55e; /* green-500 — live system green, not a spec colour */
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: cw-pulse 2.4s ease-in-out infinite;
+}
+
+.cw-status-dot--degraded {
+  background: var(--accent-signal); /* amber from tokens */
+}
+
+.cw-status-dot--unknown {
+  background: var(--text-secondary);
+}
+
+@keyframes cw-pulse {
+  0%   { box-shadow: 0 0 0 0     rgba(34, 197, 94, 0.55); }
+  50%  { box-shadow: 0 0 0 5px   rgba(34, 197, 94, 0);    }
+  100% { box-shadow: 0 0 0 0     rgba(34, 197, 94, 0);    }
+}
+
+/* Disable all non-essential animations at the shell level */
+@media (prefers-reduced-motion: reduce) {
+  .cw-status-dot--ok {
+    animation: none;
+    /* Keep the green colour — just remove the pulse */
+  }
+}
+
+/* ── Map stage ───────────────────────────────────────────────────────────
+   Full-bleed row that fills all remaining viewport height.
+   position:relative is the containing block for the floating card.
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-stage {
+  grid-row: 2;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Floating selection card ─────────────────────────────────────────────
+   Absolutely positioned over the top-left of the map.
+   Uses backdrop-filter so the map bleeds through as a subtle frost effect.
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-selection-card {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  width: 272px;
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+
+  background: color-mix(in srgb, var(--surface-panel) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line-grid);
+  border-radius: 10px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.45),
+    0 1px 4px  rgba(0, 0, 0, 0.25);
+
+  /* Scrollbar styling inside the card */
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.cw-selection-card::-webkit-scrollbar { width: 5px; }
+.cw-selection-card::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* ── Bottom readout strip ────────────────────────────────────────────────
+   Thin bar showing aggregate stats from the last query. Values are
+   rendered in the mono face so the numbers are tabular and easily scannable.
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-readout {
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 36px;
+  padding: 0 16px;
+  background: var(--surface-panel);
+  border-top: 1px solid var(--line-grid);
+  overflow: hidden;
+}
+
+.cw-readout__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Thin vertical rule between items */
+.cw-readout__sep {
+  width: 1px;
+  height: 16px;
+  background: var(--line-grid);
+  margin: 0 14px;
+  flex-shrink: 0;
+}
+
+.cw-readout__label {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.cw-readout__value {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-primary);
+}
+
+.cw-readout__value--dim {
+  color: var(--text-secondary);
+}
+
+/* ── Mobile layout ───────────────────────────────────────────────────────
+   Below 600 px the floating card goes full-width at the bottom of the
+   stage rather than overlapping the map from the top-left. The side panel
+   is hidden (candidates are still accessible via the readout and map
+   markers). The readout strip truncates gracefully with overflow:hidden.
+   ─────────────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  body {
+    /* Allow natural scroll on very small screens so the browser chrome
+       does not permanently obscure the readout strip. */
+    overflow: auto;
   }
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
+  .cw-shell {
+    height: auto;
+    min-height: 100svh;
   }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
+
+  .cw-stage {
+    /* Give the map a fixed height on mobile so it doesn't collapse */
+    height: 55svh;
+  }
+
+  .cw-selection-card {
+    /* Slide to the bottom of the stage, full width minus gutters */
+    top: auto;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: 42svh;
+    border-radius: 8px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+  .cw-selection-card {
+    width: 240px;
   }
 }

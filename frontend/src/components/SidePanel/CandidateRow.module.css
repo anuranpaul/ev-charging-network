@@ -1,0 +1,156 @@
+/*
+ * CandidateRow.module.css
+ * A single interactive row in the candidate list.
+ * Data columns (rank, score, coordinates) use --font-mono.
+ * Text columns (road type, distances) use --font-body (Inter).
+ */
+
+/* ── Row shell ───────────────────────────────────────────────────────────── */
+
+.row {
+  /* reset <li> */
+  list-style: none;
+
+  display: grid;
+  /* rank | score | coords/meta — fixed first two columns, meta takes the rest */
+  grid-template-columns: 3ch 3ch 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+
+  padding: 8px 8px 7px;
+  margin-bottom: 2px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  outline: none;
+
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.row:hover {
+  background: color-mix(in srgb, var(--line-grid) 55%, transparent);
+}
+
+.row:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent-signal);
+}
+
+/* Selected state — driven by aria-pressed */
+.row[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--line-grid) 80%, transparent);
+  border-color: color-mix(in srgb, var(--text-secondary) 50%, transparent);
+  /* 2 px inset left accent bar using accent-signal */
+  box-shadow: inset 2px 0 0 var(--accent-signal);
+}
+
+.row[aria-pressed='true']:focus-visible {
+  /* Combine selection accent with focus ring */
+  box-shadow:
+    inset 2px 0 0 var(--accent-signal),
+    var(--focus-ring);
+}
+
+/* ── Rank cell ───────────────────────────────────────────────────────────── */
+
+.rank {
+  grid-column: 1;
+  grid-row: 1;
+
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* ── Score badge ─────────────────────────────────────────────────────────── */
+
+.scoreBadge {
+  grid-column: 2;
+  grid-row: 1;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: #fff;
+  /* background is applied inline (fixed spec score-band colour) */
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+  /* Ensure the badge doesn't grow to fill the column */
+  justify-self: start;
+}
+
+/* ── Coordinates / meta ──────────────────────────────────────────────────── */
+
+.coords {
+  grid-column: 3;
+  grid-row: 1;
+
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-secondary);
+  line-height: 1.4;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Detail row — road type, distances, parking ──────────────────────────── */
+
+.detail {
+  /* span all three grid columns */
+  grid-column: 1 / -1;
+  grid-row: 2;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  align-items: center;
+}
+
+.detailChip {
+  /* Inter for text values — not data */
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* Numeric distances in detail are mono */
+.detailChip--mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Warning indicator ───────────────────────────────────────────────────── */
+
+.warningDot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e0a020;
+  flex-shrink: 0;
+  margin-left: 2px;
+  vertical-align: middle;
+  cursor: help;
+}

@@ -1,0 +1,206 @@
+/**
+ * ChargeWise Design Tokens
+ * ========================
+ * Single source of truth for the dark-panel chrome palette, typography
+ * stack, and type scale.  Score-band map colours (#FF0000 / #FFA500 /
+ * #00AA00) are fixed spec values defined in the component layer and are
+ * intentionally absent here.
+ *
+ * Usage
+ * -----
+ *   import '../styles/tokens.css';      // from any component or main.tsx
+ *   color: var(--text-primary);
+ *   font-family: var(--font-display);
+ *   font-size: var(--text-h1);
+ */
+
+/* ── 1. Google Fonts: Space Grotesk · Inter · JetBrains Mono ─────────────
+   Loaded via @import so a single CSS entry point is enough; no extra <link>
+   tags required. display=swap is used for all three faces so body text is
+   visible even before the web fonts arrive. Each family is pinned to the
+   weight range actually used so only the needed axes are downloaded.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Space Grotesk — display headings (300–700) */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+/* Inter — body copy (300–600) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+/* JetBrains Mono — data, coordinates, scores (400;500;700) */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+
+/* ── 2. Colour palette ───────────────────────────────────────────────────
+   All values are dark-mode chrome colours for the map application shell.
+   They never affect the Deck.gl score-band or layer colours.
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Backgrounds */
+  --bg-base:         #14181F;   /* page / map canvas background           */
+  --surface-panel:   #1C232D;   /* sidepanel, selection panel, overlays   */
+
+  /* Accent */
+  --accent-signal:   #F0B429;   /* CTA buttons, active toggles, highlights */
+
+  /* Text */
+  --text-primary:    #E8EAED;   /* headings, labels, primary body copy     */
+  --text-secondary:  #8B93A1;   /* helper text, meta, inactive labels      */
+
+  /* Structural */
+  --line-grid:       #2A323D;   /* borders, dividers, table rules          */
+
+
+  /* ── 3. Typography stacks ─────────────────────────────────────────────
+     --font-display  : Space Grotesk — large headings, panel titles
+     --font-body     : Inter         — body copy, UI labels, form fields
+     --font-mono     : JetBrains Mono — scores, coordinates, data cells
+     System-font fallbacks mirror the loaded face metrics as closely as
+     possible so layout shifts are minimal while fonts load.
+     ───────────────────────────────────────────────────────────────────── */
+
+  --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  --font-body:    'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Cascadia Code', ui-monospace,
+                  'SF Mono', Menlo, Consolas, monospace;
+
+
+  /* ── 4. Type scale ────────────────────────────────────────────────────
+     Named for semantic role, not arbitrary step numbers. Every size uses
+     rem so the user's browser base-font setting is respected.
+
+     Role          Size (rem)  px @16px  Usage
+     ─────────────────────────────────────────────
+     --text-h1       2.00 rem   32 px    Page / modal title (Space Grotesk)
+     --text-h2       1.375 rem  22 px    Section headers, panel titles
+     --text-body     0.9375 rem 15 px    Primary body copy, form labels
+     --text-caption  0.75 rem   12 px    Helper text, timestamps, meta
+     ─────────────────────────────────────────────────────────────────── */
+
+  --text-h1:      2rem;       /* 32 px */
+  --text-h2:      1.375rem;   /* 22 px */
+  --text-body:    0.9375rem;  /* 15 px */
+  --text-caption: 0.75rem;    /* 12 px */
+
+  /* Matching line-heights for each step */
+  --leading-h1:      1.2;
+  --leading-h2:      1.25;
+  --leading-body:    1.55;
+  --leading-caption: 1.45;
+
+  /* Letter spacing per role */
+  --tracking-h1:      -0.03em;
+  --tracking-h2:      -0.015em;
+  --tracking-body:     0em;
+  --tracking-caption:  0.01em;
+  --tracking-mono:    -0.02em;   /* tighter for tabular data */
+
+
+  /* ── 5. Derived / convenience tokens ─────────────────────────────────
+     Composed values that components reference directly.
+     ─────────────────────────────────────────────────────────────────── */
+
+  /* Focus ring — accessible visible outline using the signal accent */
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent-signal);
+
+  /* Subtle surface elevation above --surface-panel */
+  --surface-raised: color-mix(in srgb, var(--surface-panel) 80%, #fff 20%);
+
+  /* Scrollbar thumb colour for styled scrollbars */
+  --scrollbar-thumb: color-mix(in srgb, var(--line-grid) 70%, var(--text-secondary) 30%);
+}
+
+
+/* ── 6. Base resets using tokens ─────────────────────────────────────────
+   Scoped to .cw-root so they don't collide with the existing index.css
+   scaffold styles until App.tsx is fully migrated to the ChargeWise shell.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.cw-root {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.cw-root h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-h1);
+  line-height: var(--leading-h1);
+  letter-spacing: var(--tracking-h1);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.5em;
+}
+
+.cw-root h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  line-height: var(--leading-h2);
+  letter-spacing: var(--tracking-h2);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0 0 0.4em;
+}
+
+/* Body-level paragraphs and labels */
+.cw-root p,
+.cw-root label,
+.cw-root li {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+/* Caption / helper text */
+.cw-root small,
+.cw-caption {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-secondary);
+}
+
+/* Monospaced data: scores, coordinates, distances */
+.cw-mono,
+.cw-root code,
+.cw-root kbd {
+  font-family: var(--font-mono);
+  font-size: 0.875em;           /* slightly smaller than surrounding text */
+  letter-spacing: var(--tracking-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessible focus visible ring — applied globally within .cw-root */
+.cw-root :focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 2px;
+}
+
+/* Styled scrollbar — Webkit/Blink only; Firefox degrades gracefully */
+.cw-root * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.cw-root *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.cw-root *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cw-root *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}

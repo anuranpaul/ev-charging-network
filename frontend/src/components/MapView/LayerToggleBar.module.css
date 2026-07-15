@@ -1,0 +1,179 @@
+/*
+ * LayerToggleBar.module.css
+ * Vertical control cluster — slim, dark-panel aesthetic.
+ * All chrome colours come from design tokens; layer colours are applied
+ * inline via CSS custom properties set per-row in the component.
+ */
+
+/* ── Panel container ─────────────────────────────────────────────────────── */
+
+.panel {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0;
+
+  background: color-mix(in srgb, var(--surface-panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+
+  border: 1px solid var(--line-grid);
+  border-radius: 8px;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.55),
+    0 1px 3px  rgba(0, 0, 0, 0.3);
+
+  /* clip children so the top/bottom rows get the rounded corners */
+  overflow: hidden;
+
+  /* min-width prevents the panel from collapsing when the city is unset */
+  min-width: 156px;
+}
+
+/* ── Panel heading ───────────────────────────────────────────────────────── */
+
+.heading {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--line-grid);
+  /* Not interactive — purely visual */
+  user-select: none;
+}
+
+/* ── Individual toggle row ───────────────────────────────────────────────── */
+
+.row {
+  /*
+   * Uses a native <button> so keyboard focus, Enter, Space, and
+   * all AT affordances work without any extra ARIA plumbing.
+   *
+   * reset button defaults first
+   */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+  text-align: left;
+
+  /* layout */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+
+  /* typography */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+
+  /* divider between rows — top border on everything except the first */
+  border-top: 1px solid var(--line-grid);
+  outline: none;
+
+  transition: background 0.12s, color 0.12s;
+}
+
+/* Remove the top border on the very first row (heading handles that) */
+.row:first-of-type {
+  border-top: none;
+}
+
+/* ── Hover ──────────────────────────────────────────────────────────────── */
+
+.row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--line-grid) 60%, transparent);
+  color: var(--text-primary);
+}
+
+/* ── Active (toggle is ON) ──────────────────────────────────────────────── */
+
+.row[aria-checked='true'] {
+  color: var(--text-primary);
+  /* Subtle left accent bar using the per-layer colour (set via --layer-color
+     inline style on the element — see component) */
+  box-shadow: inset 3px 0 0 var(--layer-color, var(--accent-signal));
+  background: color-mix(in srgb, var(--line-grid) 40%, transparent);
+}
+
+.row[aria-checked='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--line-grid) 70%, transparent);
+}
+
+/* ── Focus-visible ──────────────────────────────────────────────────────── */
+
+.row:focus-visible {
+  /* The outer focus ring is offset inward so it sits inside the panel border
+     and stays visible even at the top/bottom edges */
+  box-shadow:
+    inset 0 0 0 2px var(--accent-signal),
+    inset 3px 0 0 var(--layer-color, transparent);
+  /* Don't let the z-order clip the ring */
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Disabled state ─────────────────────────────────────────────────────── */
+
+.row:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ── Colour swatch ───────────────────────────────────────────────────────── */
+
+.swatch {
+  /* circle, sized to sit neatly beside 12 px caption text */
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--layer-color, var(--text-secondary));
+
+  /* When inactive the swatch is dimmed; CSS handles this without a class */
+  opacity: 0.55;
+  transition: opacity 0.12s, box-shadow 0.12s;
+}
+
+/* Active state — full opacity swatch + soft glow */
+.row[aria-checked='true'] .swatch {
+  opacity: 1;
+  box-shadow: 0 0 5px 1px color-mix(in srgb, var(--layer-color, transparent) 60%, transparent);
+}
+
+/* ── Label text ──────────────────────────────────────────────────────────── */
+
+.rowLabel {
+  flex: 1;
+  /* inherits colour from .row */
+}
+
+/* ── Status indicators (loading spinner, error badge) ──────────────────── */
+
+.spinner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: ltb-spin 0.65s linear infinite;
+}
+
+@keyframes ltb-spin {
+  to { transform: rotate(360deg); }
+}
+
+.errorBadge {
+  font-size: 10px;
+  line-height: 1;
+  color: #e05252;
+  flex-shrink: 0;
+}

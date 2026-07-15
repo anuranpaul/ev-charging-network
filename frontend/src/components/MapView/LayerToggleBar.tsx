@@ -1,18 +1,25 @@
 /**
- * LayerToggleBar — a horizontal bar of toggle buttons for the seven base
- * map layers. Each button shows the layer colour swatch, label, and current
- * status (loading spinner or error badge).
+ * LayerToggleBar — a slim vertical list of layer-visibility toggles.
+ *
+ * Each row is a native <button role="switch"> so keyboard users can:
+ *   - Tab into the panel
+ *   - Arrow-key or Tab between rows
+ *   - Press Enter or Space to toggle
+ *
+ * The per-layer colour is threaded through a CSS custom property
+ * (--layer-color) so the CSS module can apply it to both the swatch
+ * and the active-state left-accent bar without importing JS values.
  */
 
+import type { LayerDataMap } from '../../hooks/useLayerData';
 import type { BaseLayerId } from '../../types/domain';
 import { BASE_LAYERS } from '../../types/domain';
-import type { LayerDataMap } from '../../hooks/useLayerData';
+import s from './LayerToggleBar.module.css';
 
 interface LayerToggleBarProps {
   activeLayers: Set<BaseLayerId>;
   layerStates: LayerDataMap;
   onToggle: (id: BaseLayerId) => void;
-  /** Disable all toggles while the map is not yet ready. */
   disabled?: boolean;
 }
 
@@ -25,23 +32,20 @@ export function LayerToggleBar({
   return (
     <div
       role="toolbar"
-      aria-label="Map layer toggles"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: '6px',
-        padding: '6px 8px',
-        background: 'rgba(255,255,255,0.92)',
-        backdropFilter: 'blur(4px)',
-        borderRadius: '6px',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-      }}
+      aria-label="Map layer visibility"
+      aria-orientation="vertical"
+      className={s.panel}
     >
+      <p className={s.heading} aria-hidden="true">Layers</p>
+
       {BASE_LAYERS.map((layer) => {
-        const isActive = activeLayers.has(layer.id);
-        const state = layerStates.get(layer.id);
+        const isActive  = activeLayers.has(layer.id);
+        const state     = layerStates.get(layer.id);
         const isLoading = state?.status === 'loading';
-        const hasError = state?.status === 'error';
+        const hasError  = state?.status === 'error';
+        const errMsg    = hasError
+          ? (state as { status: 'error'; message: string }).message
+          : undefined;
 
         return (
           <button
@@ -49,69 +53,32 @@ export function LayerToggleBar({
             type="button"
             role="switch"
             aria-checked={isActive}
-            aria-label={`${isActive ? 'Hide' : 'Show'} ${layer.label}`}
-            aria-busy={isLoading}
-            onClick={() => onToggle(layer.id)}
+            aria-label={`${layer.label} layer — ${isActive ? 'visible' : 'hidden'}`}
+            aria-busy={isLoading || undefined}
+            className={s.row}
             disabled={disabled}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '4px 10px',
-              border: `2px solid ${layer.color}`,
-              borderRadius: '4px',
-              background: isActive ? layer.color : 'transparent',
-              color: isActive ? '#fff' : '#333',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              fontSize: '12px',
-              fontWeight: 500,
-              opacity: disabled ? 0.6 : 1,
-              transition: 'background 0.15s, color 0.15s',
-              whiteSpace: 'nowrap',
-            }}
+            onClick={() => onToggle(layer.id)}
+            // Thread the layer colour into the CSS module via a custom property
+            style={{ '--layer-color': layer.color } as React.CSSProperties}
           >
             {/* Colour swatch */}
-            <span
-              aria-hidden="true"
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: layer.color,
-                flexShrink: 0,
-                outline: isActive ? '2px solid rgba(255,255,255,0.7)' : 'none',
-              }}
-            />
+            <span className={s.swatch} aria-hidden="true" />
 
-            {layer.label}
+            {/* Label */}
+            <span className={s.rowLabel}>{layer.label}</span>
 
-            {/* Loading indicator */}
+            {/* Loading spinner — shown while GeoJSON is being fetched */}
             {isLoading && (
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  border: '2px solid currentColor',
-                  borderTopColor: 'transparent',
-                  animation: 'spin 0.6s linear infinite',
-                  flexShrink: 0,
-                }}
-              />
+              <span className={s.spinner} aria-hidden="true" />
             )}
 
-            {/* Error badge */}
+            {/* Error badge — shown if the fetch failed */}
             {hasError && !isLoading && (
               <span
-                title={(state as { status: 'error'; message: string }).message}
-                aria-label="Load error"
-                style={{
-                  fontSize: 11,
-                  lineHeight: 1,
-                  color: '#c00',
-                  flexShrink: 0,
-                }}
+                className={s.errorBadge}
+                title={errMsg}
+                aria-label="Failed to load"
+                role="img"
               >
                 ⚠
               </span>
@@ -119,9 +86,6 @@ export function LayerToggleBar({
           </button>
         );
       })}
-
-      {/* Keyframe animation injected once via a style tag */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

@@ -218,14 +218,14 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect }: M
         aria-label={city ? `Map centred on ${city}` : 'Map'}
       />
 
-      {/* Layer toggle bar — bottom-left */}
+      {/* Layer toggle bar — right edge, vertically centred in the stage */}
       <div
         style={{
           position: 'absolute',
-          bottom: 32,
-          left: 8,
+          top: '50%',
+          right: 10,
+          transform: 'translateY(-50%)',
           zIndex: 10,
-          maxWidth: 'calc(100% - 16px)',
         }}
       >
         <LayerToggleBar

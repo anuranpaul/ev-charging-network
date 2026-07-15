@@ -1,122 +1,174 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+/**
+ * App — root layout shell for ChargeWise India.
+ *
+ * Layout (three CSS grid rows):
+ *   1. Top bar     — app name + live health indicator
+ *   2. Map stage   — full-bleed MapView with a floating SelectionPanel card
+ *                    and a slide-in SidePanel when results are available
+ *   3. Bottom strip — aggregate readout (candidates · coverage · avg score)
+ *
+ * State owned here:
+ *   - recommendation response (null until first successful query)
+ *   - selected candidate rank (shared between MapView and SidePanel)
+ *   - query loading flag
+ *
+ * The ApiKeyGate wraps everything so no component underneath can fire
+ * a protected request before a key is in memory.
+ */
 
-function App() {
-  const [count, setCount] = useState(0)
+import { useCallback, useState } from 'react';
+import './App.css';
+import { ApiKeyGate } from './components/shared/ApiKeyGate';
+import { StatusReadout } from './components/shared/StatusReadout';
+import { MapView } from './components/MapView';
+import { SelectionPanel } from './components/SelectionPanel';
+import { SidePanel } from './components/SidePanel';
+import { useHealthCheck } from './hooks/useHealthCheck';
+import { apiClient } from './services/apiClient';
+import type { SelectionState } from './types/domain';
+import type { CandidateFeature, RecommendationResponse } from './types/geojson';
+
+// ---------------------------------------------------------------------------
+// Status dot
+// ---------------------------------------------------------------------------
+
+function StatusDot({ status }: { status: ReturnType<typeof useHealthCheck> }) {
+  const label =
+    status === 'ok' ? 'service reachable' :
+    status === 'degraded' ? 'service degraded' :
+    'checking…';
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <span className="cw-topbar__status" aria-label={`API status: ${label}`}>
+      <span
+        className={`cw-status-dot cw-status-dot--${status}`}
+        aria-hidden="true"
+      />
+      <span>{label}</span>
+    </span>
+  );
 }
 
-export default App
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
+function ChargeWiseApp() {
+  const health = useHealthCheck();
+
+  const [response, setResponse] = useState<RecommendationResponse | null>(null);
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeCity, setActiveCity] = useState<string | null>(null);
+
+  // ── Query handler ──────────────────────────────────────────────────────
+  const handleSelectionSubmit = useCallback(
+    async (selection: Required<SelectionState>) => {
+      setIsLoading(true);
+      setSelectedRank(null);
+      setActiveCity(selection.city);
+      try {
+        const data = await apiClient.post<RecommendationResponse>(
+          '/recommendation',
+          {
+            city: selection.city,
+            chargerType: selection.chargerType,
+            radius: selection.radius,
+          },
+        );
+        setResponse(data);
+      } catch {
+        // Errors are surfaced via the toast system (future); silently reset
+        // loading state for now so the form re-enables.
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [],
+  );
+
+  // ── Candidate selection (shared between map marker click and list row) ─
+  const handleCandidateSelect = useCallback((candidate: CandidateFeature) => {
+    setSelectedRank(candidate.properties.rank);
+  }, []);
+
+  // ── Readout strip values ───────────────────────────────────────────────
+  // Derived inside StatusReadout itself; nothing to compute here.
+  // coverage_pct is not returned by POST /recommendation; pass undefined
+  // until GET /analysis is wired up.
+
+  const hasResults = response !== null && response.features.length > 0;
+
+  return (
+    <div className="cw-shell cw-root">
+
+      {/* ── 1. Top bar ─────────────────────────────────────────────────── */}
+      <header className="cw-topbar" role="banner">
+        <p className="cw-topbar__name">EV network India</p>
+        <StatusDot status={health} />
+      </header>
+
+      {/* ── 2. Map stage ───────────────────────────────────────────────── */}
+      <main className="cw-stage" role="main">
+
+        {/* Full-bleed map fills the entire stage */}
+        <MapView
+          city={activeCity}
+          candidates={response?.features ?? []}
+          selectedRank={selectedRank}
+          onCandidateSelect={handleCandidateSelect}
+        />
+
+        {/* Floating selection card — always visible over the map */}
+        <div className="cw-selection-card" aria-label="Query parameters">
+          <SelectionPanel
+            onSubmit={handleSelectionSubmit}
+            isLoading={isLoading}
+          />
+        </div>
+
+        {/* Side panel slides in from the right when results exist */}
+        {hasResults && (
+          <aside
+            aria-label="Ranked candidates"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 300,
+              background: 'color-mix(in srgb, var(--surface-panel) 94%, transparent)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+              borderLeft: '1px solid var(--line-grid)',
+              zIndex: 20,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <SidePanel
+              response={response}
+              selectedRank={selectedRank}
+              onCandidateSelect={handleCandidateSelect}
+            />
+          </aside>
+        )}
+      </main>
+
+      {/* ── 3. Bottom readout strip ────────────────────────────────────── */}
+      <StatusReadout response={response} />
+
+    </div>
+  );
+}
+
+// ApiKeyGate wraps the entire app so the map and all protected calls
+// are blocked until a key is held in memory.
+export default function App() {
+  return (
+    <ApiKeyGate>
+      <ChargeWiseApp />
+    </ApiKeyGate>
+  );
+}

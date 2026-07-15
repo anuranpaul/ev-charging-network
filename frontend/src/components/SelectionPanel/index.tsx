@@ -1,14 +1,14 @@
 /**
- * SelectionPanel — top-level form that composes CityDropdown,
- * ChargerTypeSelector, and RadiusInput.
+ * SelectionPanel — floating card composing CityDropdown, ChargerTypeSelector,
+ * and RadiusInput.
  *
- * Behaviour spec (Requirement 1):
- * - Cities loaded from GET /cities (public endpoint, no auth required).
- * - Charger types are the fixed enum SLOW / FAST / DC_FAST.
- * - Radius is a free integer input constrained to [250, 10 000].
- * - Validation fires on submit; inline error messages are shown next to
- *   each field.
- * - Changing city resets chargerType to null and radius to the default.
+ * Behaviour (Requirement 1):
+ * - Cities from GET /cities; charger types fixed enum; radius 250–10 000 m.
+ * - Validation on submit, inline messages per field.
+ * - City change resets chargerType → null and radius → default.
+ *
+ * Presentation: styled via SelectionPanel.module.css; all token values come
+ * from tokens.css — no inline style props in this file.
  */
 
 import { type FormEvent, useCallback, useState } from 'react';
@@ -22,6 +22,7 @@ import {
 import { ChargerTypeSelector } from './ChargerTypeSelector';
 import { CityDropdown } from './CityDropdown';
 import { RadiusInput } from './RadiusInput';
+import s from './SelectionPanel.module.css';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,17 +35,12 @@ interface ValidationErrors {
 }
 
 export interface SelectionPanelProps {
-  /**
-   * Called with the validated selection when the user submits the form.
-   * Only fired when all three fields pass validation.
-   */
   onSubmit: (selection: Required<SelectionState>) => void;
-  /** Set to true while a recommendation request is in-flight. */
   isLoading?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Validation
+// Validation — instrument-style messages, no generic copy
 // ---------------------------------------------------------------------------
 
 function validate(
@@ -55,15 +51,17 @@ function validate(
   const errors: ValidationErrors = {};
 
   if (!city) {
-    errors.city = 'Please select a city.';
+    errors.city = 'Select a city to continue.';
   }
 
   if (!chargerType) {
-    errors.chargerType = 'Please select a charger type.';
+    errors.chargerType = 'Select a charger type.';
   }
 
   if (!Number.isInteger(radius) || radius < RADIUS_MIN || radius > RADIUS_MAX) {
-    errors.radius = `Radius must be a whole number between ${RADIUS_MIN.toLocaleString()} and ${RADIUS_MAX.toLocaleString()} metres.`;
+    errors.radius =
+      `Radius must be between ${RADIUS_MIN.toLocaleString()} and ` +
+      `${RADIUS_MAX.toLocaleString()} metres.`;
   }
 
   return errors;
@@ -74,17 +72,16 @@ function validate(
 // ---------------------------------------------------------------------------
 
 export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelProps) {
-  const [city, setCity] = useState<string | null>(null);
+  const [city, setCity]             = useState<string | null>(null);
   const [chargerType, setChargerType] = useState<ChargerType | null>(null);
-  const [radius, setRadius] = useState<number>(RADIUS_DEFAULT);
-  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [radius, setRadius]         = useState<number>(RADIUS_DEFAULT);
+  const [errors, setErrors]         = useState<ValidationErrors>({});
 
-  // When city changes, reset dependent fields and clear their errors.
   const handleCityChange = useCallback((newCity: string) => {
     setCity(newCity);
     setChargerType(null);
     setRadius(RADIUS_DEFAULT);
-    setErrors((prev) => ({ ...prev, city: undefined, chargerType: undefined, radius: undefined }));
+    setErrors({});
   }, []);
 
   const handleChargerTypeChange = useCallback((type: ChargerType) => {
@@ -100,14 +97,11 @@ export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelPr
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-
       const validationErrors = validate(city, chargerType, radius);
       if (Object.keys(validationErrors).length > 0) {
         setErrors(validationErrors);
         return;
       }
-
-      // All fields are valid at this point.
       onSubmit({
         city: city as string,
         chargerType: chargerType as ChargerType,
@@ -118,31 +112,51 @@ export function SelectionPanel({ onSubmit, isLoading = false }: SelectionPanelPr
   );
 
   return (
-    <form onSubmit={handleSubmit} noValidate aria-label="Charging station recommendation parameters">
-      <CityDropdown
-        value={city}
-        onChange={handleCityChange}
-        error={errors.city}
-        disabled={isLoading}
-      />
+    <form
+      className={s.panel}
+      onSubmit={handleSubmit}
+      noValidate
+      aria-label="Charging station recommendation parameters"
+    >
+      {/* Card title */}
+      <div className={s.header}>
+        <p className={s.title}>Find charging locations</p>
+      </div>
 
-      <ChargerTypeSelector
-        value={chargerType}
-        onChange={handleChargerTypeChange}
-        error={errors.chargerType}
-        disabled={isLoading}
-      />
+      <div className={s.body}>
+        <CityDropdown
+          value={city}
+          onChange={handleCityChange}
+          error={errors.city}
+          disabled={isLoading}
+        />
 
-      <RadiusInput
-        value={radius}
-        onChange={handleRadiusChange}
-        error={errors.radius}
-        disabled={isLoading}
-      />
+        <ChargerTypeSelector
+          value={chargerType}
+          onChange={handleChargerTypeChange}
+          error={errors.chargerType}
+          disabled={isLoading}
+        />
 
-      <button type="submit" disabled={isLoading} aria-busy={isLoading}>
-        {isLoading ? 'Finding locations…' : 'Find Locations'}
-      </button>
+        <RadiusInput
+          value={radius}
+          onChange={handleRadiusChange}
+          error={errors.radius}
+          disabled={isLoading}
+        />
+      </div>
+
+      {/* Submit */}
+      <div className={s.footer}>
+        <button
+          type="submit"
+          className={s.submitBtn}
+          disabled={isLoading}
+          aria-busy={isLoading}
+        >
+          {isLoading ? 'Finding locations…' : 'Find locations'}
+        </button>
+      </div>
     </form>
   );
 }

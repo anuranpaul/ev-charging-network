@@ -1,9 +1,16 @@
 /**
- * CandidateRow — a single row in the candidate list.
- * Clicking the row triggers pan+zoom on the map and highlights the marker.
+ * CandidateRow — a single interactive list row.
+ *
+ * Typography contract:
+ *   rank, score, coordinates, distances → --font-mono (tabular data)
+ *   road type, parking label            → --font-body (Inter, text values)
+ *
+ * Score-band background colours (#FF0000 / #FFA500 / #00AA00) are fixed
+ * spec values applied inline — they are not design-system tokens.
  */
 
 import type { CandidateFeature } from '../../types/geojson';
+import s from './CandidateRow.module.css';
 
 interface CandidateRowProps {
   candidate: CandidateFeature;
@@ -11,27 +18,32 @@ interface CandidateRowProps {
   onClick: (candidate: CandidateFeature) => void;
 }
 
-/** Score band colour — matches ScatterplotLayer fill colours. */
-function scoreBandColor(score: number): string {
+/** Fixed spec colours — not tokens. */
+function scoreBandBg(score: number): string {
   if (score <= 33) return '#FF0000';
   if (score <= 66) return '#FFA500';
   return '#00AA00';
 }
 
 function fmtDist(v: number | null): string {
-  return v === null ? 'None' : `${v.toLocaleString(undefined, { maximumFractionDigits: 0 })} m`;
+  if (v === null) return '—';
+  return v >= 1000
+    ? `${(v / 1000).toFixed(1)} km`
+    : `${Math.round(v)} m`;
 }
 
 export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowProps) {
   const p = candidate.properties;
   const [lng, lat] = candidate.geometry.coordinates;
+  const hasWarnings = p.warnings.length > 0;
 
   return (
     <li
+      className={s.row}
       role="button"
       tabIndex={0}
       aria-pressed={isSelected}
-      aria-label={`Rank ${p.rank}, score ${p.score}`}
+      aria-label={`Rank ${p.rank}, score ${p.score}. Click to pan map to this location.`}
       onClick={() => onClick(candidate)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -39,45 +51,50 @@ export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowPro
           onClick(candidate);
         }
       }}
-      style={{
-        listStyle: 'none',
-        padding: '8px 10px',
-        marginBottom: 4,
-        borderRadius: 5,
-        cursor: 'pointer',
-        background: isSelected ? 'rgba(255,255,255,0.12)' : 'transparent',
-        border: isSelected ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
-        transition: 'background 0.12s',
-      }}
     >
-      {/* Top line: rank + score badge */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, minWidth: 28 }}>#{p.rank}</span>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            color: '#fff',
-            background: scoreBandColor(p.score),
-            borderRadius: 3,
-            padding: '1px 6px',
-          }}
-          aria-label={`Score ${p.score}`}
-        >
-          {p.score}
-        </span>
-        <span style={{ fontSize: 11, color: '#aaa', marginLeft: 'auto' }}>
-          {lat.toFixed(4)}, {lng.toFixed(4)}
-        </span>
-      </div>
+      {/* ── Rank ── */}
+      <span className={s.rank} aria-label={`Rank ${p.rank}`}>
+        #{p.rank}
+      </span>
 
-      {/* Detail line */}
-      <div style={{ fontSize: 11, color: '#bbb', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <span>Pop: {p.population_1km.toLocaleString()}</span>
-        <span>Charger: {fmtDist(p.nearest_charger_distance_m)}</span>
-        <span>{p.road_type || '—'}</span>
-        <span>{p.parking_available ? '🅿' : '–'}</span>
-        <span>Mall: {fmtDist(p.nearest_mall_distance_m)}</span>
+      {/* ── Score badge ── */}
+      <span
+        className={s.scoreBadge}
+        style={{ background: scoreBandBg(p.score) }}
+        aria-label={`Score ${p.score}`}
+      >
+        {p.score}
+        {hasWarnings && (
+          <span
+            className={s.warningDot}
+            title={`Warnings: ${p.warnings.join('; ')}`}
+            aria-label={`${p.warnings.length} warning${p.warnings.length > 1 ? 's' : ''}`}
+            role="img"
+          />
+        )}
+      </span>
+
+      {/* ── Coordinates ── */}
+      <span className={s.coords} aria-label={`${lat.toFixed(4)}°N ${lng.toFixed(4)}°E`}>
+        {lat.toFixed(4)}, {lng.toFixed(4)}
+      </span>
+
+      {/* ── Detail row ── */}
+      <div className={s.detail} aria-label="Location details">
+        <span className={s.detailChip}>
+          {p.road_type || 'no road'}
+        </span>
+        <span className={`${s.detailChip} ${s['detailChip--mono']}`}
+          aria-label={`Population within 1 km: ${p.population_1km.toLocaleString()}`}>
+          {p.population_1km.toLocaleString()} pop
+        </span>
+        <span className={`${s.detailChip} ${s['detailChip--mono']}`}
+          aria-label={`Nearest charger: ${fmtDist(p.nearest_charger_distance_m)}`}>
+          ⚡ {fmtDist(p.nearest_charger_distance_m)}
+        </span>
+        {p.parking_available && (
+          <span className={s.detailChip} aria-label="Parking available">🅿</span>
+        )}
       </div>
     </li>
   );

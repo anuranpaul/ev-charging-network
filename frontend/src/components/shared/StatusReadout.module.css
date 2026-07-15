@@ -1,0 +1,106 @@
+/*
+ * StatusReadout.module.css
+ * Full-width bottom bar — monospace data display.
+ * Quiet, precise, no decorative motion beyond the count-up numbers.
+ */
+
+/* ── Bar container ───────────────────────────────────────────────────────── */
+
+.bar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 16px;
+
+  background: var(--surface-panel);
+  border-top: 1px solid var(--line-grid);
+
+  /* Prevent items from wrapping on narrow viewports */
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── Stat cluster ────────────────────────────────────────────────────────── */
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* ── Separator ───────────────────────────────────────────────────────────── */
+
+.sep {
+  width: 1px;
+  height: 14px;
+  background: var(--line-grid);
+  margin: 0 16px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* ── Label ───────────────────────────────────────────────────────────────── */
+
+.label {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  /* uppercase keeps labels visually subordinate to the values */
+  text-transform: uppercase;
+  /* prevent reflow when value changes width */
+  flex-shrink: 0;
+}
+
+/* ── Value ───────────────────────────────────────────────────────────────── */
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-primary);
+
+  /*
+   * Fixed minimum width per slot prevents the bar from shifting
+   * horizontally as digit count changes during count-up.
+   * Values: candidates up to 9,999 (5 ch), coverage "100.0%" (6 ch),
+   * avg score 0-100 (3 ch). Use the widest expected string.
+   */
+  min-width: 6ch;
+  display: inline-block;
+  text-align: right;
+}
+
+/* Em-dash (no data yet) */
+.value--empty {
+  color: var(--text-secondary);
+  /* centre the dash rather than right-aligning it */
+  text-align: center;
+  opacity: 0.6;
+}
+
+/* ── Flash animation — fires once when a new value arrives ──────────────── */
+
+/*
+ * A single-frame colour sweep: text briefly brightens to --accent-signal
+ * then fades back to --text-primary over 500 ms.
+ * The animation is only applied when the .flash class is present.
+ * prefers-reduced-motion disables it entirely via the media query below.
+ */
+
+@keyframes sr-flash {
+  0%   { color: var(--accent-signal); }
+  100% { color: var(--text-primary);  }
+}
+
+.flash {
+  animation: sr-flash 500ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash {
+    animation: none;
+  }
+}

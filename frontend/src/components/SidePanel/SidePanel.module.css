@@ -1,0 +1,260 @@
+/*
+ * SidePanel.module.css
+ * Shares the same panel treatment as SelectionPanel:
+ *   --surface-panel background, --line-grid borders, same section rhythm.
+ * Token-only values — no hardcoded colours except the score-band swatch
+ * backgrounds, which are fixed spec values applied inline by CandidateRow.
+ */
+
+/* ── Panel shell ─────────────────────────────────────────────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.header {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 0 0 2px;
+  line-height: 1.2;
+  /* Keep city + charger type on one line, truncate if needed */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerMeta {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1;
+}
+
+/* ── Sort toolbar ────────────────────────────────────────────────────────── */
+
+.sortBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.sortLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.sortBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--line-grid);
+  background: transparent;
+  margin: 0;
+  /* layout */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  /* type */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.sortBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--line-grid) 60%, transparent);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.sortBtn:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent-signal);
+  color: var(--text-primary);
+}
+
+/* Active sort column */
+.sortBtn--active {
+  background: color-mix(in srgb, var(--line-grid) 80%, transparent);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Directional indicator glyph — rendered in a separate <span> inside the btn */
+.sortIndicator {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.7;
+  /* nudge into vertical alignment with cap-height */
+  position: relative;
+  top: -0.5px;
+}
+
+/* ── Slider row ──────────────────────────────────────────────────────────── */
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 7px;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.sliderLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.slider {
+  flex: 1;
+  accent-color: var(--accent-signal);
+  cursor: pointer;
+}
+
+.sliderValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-primary);
+  min-width: 3ch;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Candidate list ──────────────────────────────────────────────────────── */
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 6px;
+  list-style: none;
+
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.list::-webkit-scrollbar { width: 5px; }
+.list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+/* ── Footer / CSV export ─────────────────────────────────────────────────── */
+
+.footer {
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.exportBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  /* layout */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 0;
+  /* chrome */
+  background: transparent;
+  border: 1px solid var(--line-grid);
+  border-radius: 5px;
+  /* type */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.exportBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--line-grid) 60%, transparent);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.exportBtn:focus-visible {
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent-signal);
+  color: var(--text-primary);
+}
+
+.exportBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 20px;
+  text-align: center;
+  gap: 8px;
+}
+
+.emptyIcon {
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.3;
+  /* prevent the icon from inheriting the body font's letter-spacing */
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.emptyText {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+  max-width: 220px;
+  margin: 0;
+}
