@@ -17,7 +17,7 @@
  * a protected request before a key is in memory.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import { ApiKeyGate } from './components/shared/ApiKeyGate';
 import { StatusReadout } from './components/shared/StatusReadout';
@@ -29,6 +29,7 @@ import { apiClient } from './services/apiClient';
 import type { SelectionState, QueryError } from './types/domain';
 import { parseQueryError } from './types/domain';
 import type { CandidateFeature, RecommendationResponse, AnalysisResponse } from './types/geojson';
+import { ParkingSquare, ShoppingBag, TriangleAlert, Users, Zap } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
 // Status dot
@@ -48,6 +49,59 @@ function StatusDot({ status }: { status: ReturnType<typeof useHealthCheck> }) {
       />
       <span>{label}</span>
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Map Legend & Icon Key
+// ---------------------------------------------------------------------------
+
+function MapLegend() {
+  return (
+    <div className="cw-map-legend" aria-label="Map legend and key">
+      <div className="cw-legend-section">
+        <p className="cw-legend-title">Score Legend</p>
+        <div className="cw-legend-grid">
+          <div className="cw-legend-item">
+            <span className="cw-legend-swatch" style={{ background: '#FF0000' }} aria-hidden="true" />
+            <span className="cw-legend-label">0–33 Low</span>
+          </div>
+          <div className="cw-legend-item">
+            <span className="cw-legend-swatch" style={{ background: '#FFA500' }} aria-hidden="true" />
+            <span className="cw-legend-label">34–66 Mid</span>
+          </div>
+          <div className="cw-legend-item">
+            <span className="cw-legend-swatch" style={{ background: '#00AA00' }} aria-hidden="true" />
+            <span className="cw-legend-label">67–100 High</span>
+          </div>
+        </div>
+      </div>
+      <div className="cw-legend-section cw-legend-section--divider">
+        <p className="cw-legend-title">Icon Key</p>
+        <div className="cw-legend-grid">
+          <div className="cw-legend-item">
+            <Zap size={12} className="cw-legend-icon" aria-hidden="true" />
+            <span className="cw-legend-label">Nearest Charger</span>
+          </div>
+          <div className="cw-legend-item">
+            <ParkingSquare size={12} className="cw-legend-icon" aria-hidden="true" />
+            <span className="cw-legend-label">Parking Available</span>
+          </div>
+          <div className="cw-legend-item">
+            <Users size={12} className="cw-legend-icon" aria-hidden="true" />
+            <span className="cw-legend-label">Population (1 km)</span>
+          </div>
+          <div className="cw-legend-item">
+            <ShoppingBag size={12} className="cw-legend-icon" aria-hidden="true" />
+            <span className="cw-legend-label">Nearest Mall</span>
+          </div>
+          <div className="cw-legend-item">
+            <TriangleAlert size={12} className="cw-legend-icon cw-legend-icon--warning" aria-hidden="true" />
+            <span className="cw-legend-label">Warnings</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -110,7 +164,7 @@ function ChargeWiseApp() {
           { signal },
         ),
         apiClient.get<AnalysisResponse>(
-          `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`,
+          `/analysis?city=${encodeURIComponent(selection.city ?? '')}&chargerType=${encodeURIComponent(selection.chargerType ?? '')}`,
           { signal },
         ),
       ]);
@@ -159,6 +213,26 @@ function ChargeWiseApp() {
   // Show the side panel whenever we're loading, there's an error, or results exist.
   const showSidePanel = isLoading || queryError !== null || hasResults;
 
+  const handleCloseResults = useCallback(() => {
+    setResponse(null);
+    setAnalysis(null);
+    setSelectedRank(null);
+  }, []);
+
+  // Escape key close handler
+  useEffect(() => {
+    if (!showSidePanel) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleCloseResults();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showSidePanel, handleCloseResults]);
+
   // Map a 400 field error back to inline SelectionPanel validation — only
   // city / chargerType / radius are valid field names from the API.
   const serverFieldErrors: { city?: string; chargerType?: string; radius?: string } =
@@ -205,6 +279,9 @@ function ChargeWiseApp() {
           />
         </div>
 
+        {/* Unified Map Legend and Icon Key card floating at bottom-left */}
+        {hasResults && <MapLegend />}
+
         {/* Side panel slides in from the right when loading, errored, or
             results exist. The panel renders skeleton / error panel / list. */}
         {showSidePanel && (
@@ -222,6 +299,7 @@ function ChargeWiseApp() {
               loadingChargerType={loadingChargerType}
               queryError={queryError}
               onRetry={handleRetry}
+              onClose={handleCloseResults}
             />
           </aside>
         )}

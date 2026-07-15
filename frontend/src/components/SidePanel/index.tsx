@@ -12,7 +12,7 @@
  * All inline style props have been removed; every value references tokens.
  */
 
-import { useCallback, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useId, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
@@ -94,40 +94,47 @@ export interface SidePanelProps {
   analysis?: AnalysisResponse | null;
   selectedRank: number | null;
   onCandidateSelect: (candidate: CandidateFeature) => void;
-  /** True while POST /recommendation is in flight. */
   isLoading?: boolean;
-  /** City being scored — shown in the loading panel status line. */
   loadingCity?: string | null;
-  /** Charger type being scored — shown in the loading panel status line. */
   loadingChargerType?: string | null;
-  /** Typed error from the last failed query — drives the error panel. */
   queryError?: QueryError | null;
   /** Called when the user clicks "Retry" in the 503 error panel. */
   onRetry?: () => void;
+  onClose: () => void;
+}
+
+interface CandidateGroup {
+  score: number;
+  candidates: CandidateFeature[];
+}
+
+function groupCandidatesByScore(candidates: CandidateFeature[]): CandidateGroup[] {
+  const groups: CandidateGroup[] = [];
+  if (candidates.length === 0) return groups;
+
+  let currentGroup: CandidateGroup = {
+    score: candidates[0].properties.score,
+    candidates: [candidates[0]],
+  };
+
+  for (let i = 1; i < candidates.length; i++) {
+    const c = candidates[i];
+    if (c.properties.score === currentGroup.score) {
+      currentGroup.candidates.push(c);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = {
+        score: c.properties.score,
+        candidates: [c],
+      };
+    }
+  }
+  groups.push(currentGroup);
+  return groups;
 }
 
 // ---------------------------------------------------------------------------
-// Score legend — compact strip showing the three colour bands
-// ---------------------------------------------------------------------------
-
-function ScoreLegend() {
-  return (
-    <div className={s.scoreLegend} aria-label="Score colour legend">
-      <span className={s.legendItem}>
-        <span className={s.legendSwatch} style={{ background: '#FF0000' }} aria-hidden="true" />
-        <span className={s.legendLabel}>0–33 low</span>
-      </span>
-      <span className={s.legendItem}>
-        <span className={s.legendSwatch} style={{ background: '#FFA500' }} aria-hidden="true" />
-        <span className={s.legendLabel}>34–66 mid</span>
-      </span>
-      <span className={s.legendItem}>
-        <span className={s.legendSwatch} style={{ background: '#00AA00' }} aria-hidden="true" />
-        <span className={s.legendLabel}>67–100 high</span>
-      </span>
-    </div>
-  );
-}
+// ScoreLegend is now rendered persistently on the map stage.
 
 // ---------------------------------------------------------------------------
 // Sort-indicator glyph — subtle, single-character
@@ -414,6 +421,7 @@ export function SidePanel({
   loadingChargerType = null,
   queryError = null,
   onRetry,
+  onClose,
 }: SidePanelProps) {
   const [sortCol, setSortCol]       = useState<SortColumn>('rank');
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
@@ -446,6 +454,10 @@ export function SidePanel({
     downloadCsv(csv, `chargewise_${(response?.city ?? 'city').toLowerCase()}_candidates.csv`);
   }, [visibleCandidates, response]);
 
+  const groupedCandidates = useMemo(() => {
+    return groupCandidatesByScore(visibleCandidates);
+  }, [visibleCandidates]);
+
   if (isLoading) {
     return <LoadingPanel city={loadingCity} chargerType={loadingChargerType} />;
   }
@@ -467,6 +479,15 @@ export function SidePanel({
 
       {/* ── Header ── */}
       <div className={s.header}>
+        <button
+          type="button"
+          className={s.closeBtn}
+          onClick={onClose}
+          aria-label="Close results panel"
+          title="Close results panel (Esc)"
+        >
+          ✕
+        </button>
         <p className={s.headerTitle}>
           {response.city} · {response.chargerType.replace('_', ' ').toLowerCase()}
         </p>
@@ -474,9 +495,6 @@ export function SidePanel({
           {response.total_candidates.toLocaleString()} candidates scored
         </p>
       </div>
-
-      {/* ── Score colour legend ── */}
-      <ScoreLegend />
 
       {/* ── Sort controls ── */}
       <div
@@ -500,6 +518,9 @@ export function SidePanel({
           </button>
         ))}
       </div>
+      <div className={s.sortCaption}>
+        Sorted by score. When scores tie, rank order is arbitrary.
+      </div>
 
       {/* ── Display-count slider ── */}
       <div className={s.sliderRow}>
@@ -521,6 +542,9 @@ export function SidePanel({
           {displayCount}
         </span>
       </div>
+      <div className={s.sliderHelp}>
+        Showing top {Math.min(displayCount, response.total_candidates)} of {response.total_candidates} candidates
+      </div>
 
       {/* ── Candidate list ── */}
       <ul
@@ -528,14 +552,28 @@ export function SidePanel({
         role="list"
         aria-label={`${visibleCandidates.length} ranked candidates`}
       >
-        {visibleCandidates.map((c) => (
-          <CandidateRow
-            key={c.properties.rank}
-            candidate={c}
-            isSelected={c.properties.rank === selectedRank}
-            onClick={onCandidateSelect}
-          />
-        ))}
+        {groupedCandidates.map((group) => {
+          const isTied = group.candidates.length > 1;
+          const groupKey = `group-${group.score}-${group.candidates[0].properties.rank}`;
+          return (
+            <Fragment key={groupKey}>
+              {isTied && (
+                <div className={s.tiedHeader}>
+                  {group.candidates.length} candidates tied at score {group.score}
+                </div>
+              )}
+              {group.candidates.map((c) => (
+                <CandidateRow
+                  key={c.properties.rank}
+                  candidate={c}
+                  isSelected={c.properties.rank === selectedRank}
+                  onClick={onCandidateSelect}
+                  total={response.total_candidates}
+                />
+              ))}
+            </Fragment>
+          );
+        })}
       </ul>
 
       {/* ── Ward breakdown (from analysis) ── */}
