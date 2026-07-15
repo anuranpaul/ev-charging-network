@@ -357,3 +357,32 @@ body {
     transition: none;
   }
 }
+
+/* ── Results side panel ──────────────────────────────────────────────────
+   Slides in from the right when loading, errored, or results are present.
+   Removed from inline styles in App.tsx so the value is maintained here
+   alongside the rest of the shell layout rules.
+   ─────────────────────────────────────────────────────────────────────── */
+.cw-results-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  background: color-mix(in srgb, var(--surface-panel) 94%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-left: 1px solid var(--line-grid);
+  z-index: 20;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 600px) {
+  /* Hide the results panel on mobile — candidates remain accessible via
+     the readout strip and map markers. */
+  .cw-results-panel {
+    display: none;
+  }
+}

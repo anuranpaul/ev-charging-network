@@ -11,6 +11,7 @@
  * and the active-state left-accent bar without importing JS values.
  */
 
+import { TriangleAlert } from 'lucide-react';
 import type { LayerDataMap } from '../../hooks/useLayerData';
 import type { BaseLayerId } from '../../types/domain';
 import { BASE_LAYERS } from '../../types/domain';
@@ -103,14 +104,12 @@ export function LayerToggleBar({
 
             {/* Error badge — shown if the fetch failed */}
             {hasError && !isLoading && (
-              <span
+              <TriangleAlert
+                size={10}
                 className={s.errorBadge}
                 title={errMsg}
                 aria-label="Failed to load"
-                role="img"
-              >
-                ⚠
-              </span>
+              />
             )}
           </button>
         );

@@ -4,6 +4,14 @@
  * road type, parking availability, nearest mall distance (Req 6 AC-3).
  */
 
+import {
+  Car,
+  MapPin,
+  ShoppingBag,
+  TriangleAlert,
+  Users,
+  Zap,
+} from 'lucide-react';
 import type { CandidateFeature } from '../../types/geojson';
 import { Tooltip } from '../shared/Tooltip';
 
@@ -14,9 +22,18 @@ interface CandidateTooltipProps {
   onClose: () => void;
 }
 
-function fmt(value: number | null, unit: string): string {
-  if (value === null || value === undefined) return 'None';
-  return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
+function fmtDist(v: number | null): string {
+  if (v === null || v === undefined) return 'None';
+  return v >= 1000
+    ? `${(v / 1000).toFixed(1)} km`
+    : `${Math.round(v)} m`;
+}
+
+/** Band colour matching the Deck.gl ScatterplotLayer palette. */
+function scoreBandColor(score: number): string {
+  if (score <= 33) return '#FF0000';
+  if (score <= 66) return '#FFA500';
+  return '#00AA00';
 }
 
 export function CandidateTooltip({ candidate, x, y, onClose }: CandidateTooltipProps) {
@@ -24,34 +41,91 @@ export function CandidateTooltip({ candidate, x, y, onClose }: CandidateTooltipP
 
   return (
     <Tooltip x={x} y={y} onClose={onClose}>
-      <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>
-        Rank #{p.rank} — Score {p.score}/100
+      {/* Title row */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 10,
+        paddingBottom: 8,
+        borderBottom: '1px solid var(--line-grid)',
+      }}>
+        <MapPin size={14} aria-hidden="true" style={{ color: 'var(--accent-signal)', flexShrink: 0 }} />
+        <span style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 'var(--text-body)',
+          color: 'var(--text-primary)',
+        }}>
+          Rank #{p.rank}
+        </span>
+        <span style={{
+          marginLeft: 'auto',
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 700,
+          fontSize: 'var(--text-body)',
+          color: scoreBandColor(p.score),
+          letterSpacing: 'var(--tracking-mono)',
+        }}>
+          {p.score}/100
+        </span>
       </div>
-      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <tbody>
-          <Row label="Population (1 km)" value={p.population_1km.toLocaleString()} />
-          <Row label="Nearest charger" value={fmt(p.nearest_charger_distance_m, 'm')} />
-          <Row label="Road type" value={p.road_type || '—'} />
-          <Row label="Parking nearby" value={p.parking_available ? 'Yes' : 'No'} />
-          <Row label="Nearest mall" value={fmt(p.nearest_mall_distance_m, 'm')} />
-        </tbody>
-      </table>
+
+      {/* Detail rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <TooltipRow icon={<Users size={12} />} label="Population (1 km)" value={p.population_1km.toLocaleString()} />
+        <TooltipRow icon={<Zap size={12} />}   label="Nearest charger"   value={fmtDist(p.nearest_charger_distance_m)} />
+        <TooltipRow icon={<Car size={12} />}   label="Road type"         value={p.road_type || '—'} />
+        <TooltipRow icon={<ShoppingBag size={12} />} label="Nearest mall" value={fmtDist(p.nearest_mall_distance_m)} />
+      </div>
+
+      {/* Warnings */}
       {p.warnings.length > 0 && (
-        <p style={{ marginTop: 6, fontSize: 11, color: '#ffb74d' }}>
-          ⚠ {p.warnings.join(', ')}
-        </p>
+        <div style={{
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: '1px solid var(--line-grid)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 5,
+          color: '#F0B429',
+          fontSize: 'var(--text-caption)',
+          fontFamily: 'var(--font-body)',
+        }}>
+          <TriangleAlert size={12} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden="true" />
+          {p.warnings.join(', ')}
+        </div>
       )}
     </Tooltip>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function TooltipRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <tr>
-      <td style={{ paddingRight: 8, color: '#aaa', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ color: 'var(--text-secondary)', flexShrink: 0, display: 'flex' }} aria-hidden="true">
+        {icon}
+      </span>
+      <span style={{
+        color: 'var(--text-secondary)',
+        fontFamily: 'var(--font-body)',
+        fontSize: 'var(--text-caption)',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}>
         {label}
-      </td>
-      <td style={{ fontWeight: 500 }}>{value}</td>
-    </tr>
+      </span>
+      <span style={{
+        marginLeft: 'auto',
+        color: 'var(--text-primary)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 'var(--text-caption)',
+        letterSpacing: 'var(--tracking-mono)',
+        fontVariantNumeric: 'tabular-nums',
+        textAlign: 'right',
+      }}>
+        {value}
+      </span>
+    </div>
   );
 }

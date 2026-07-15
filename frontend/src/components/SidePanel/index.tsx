@@ -13,6 +13,12 @@
  */
 
 import { useCallback, useId, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  Download,
+  RefreshCw,
+  SlidersHorizontal,
+} from 'lucide-react';
 import type { QueryError } from '../../types/domain';
 import type { CandidateFeature, RecommendationResponse } from '../../types/geojson';
 import { CandidateRow } from './CandidateRow';
@@ -89,6 +95,29 @@ export interface SidePanelProps {
   queryError?: QueryError | null;
   /** Called when the user clicks "Retry" in the 503 error panel. */
   onRetry?: () => void;
+}
+
+// ---------------------------------------------------------------------------
+// Score legend — compact strip showing the three colour bands
+// ---------------------------------------------------------------------------
+
+function ScoreLegend() {
+  return (
+    <div className={s.scoreLegend} aria-label="Score colour legend">
+      <span className={s.legendItem}>
+        <span className={s.legendSwatch} style={{ background: '#FF0000' }} aria-hidden="true" />
+        <span className={s.legendLabel}>0–33 low</span>
+      </span>
+      <span className={s.legendItem}>
+        <span className={s.legendSwatch} style={{ background: '#FFA500' }} aria-hidden="true" />
+        <span className={s.legendLabel}>34–66 mid</span>
+      </span>
+      <span className={s.legendItem}>
+        <span className={s.legendSwatch} style={{ background: '#00AA00' }} aria-hidden="true" />
+        <span className={s.legendLabel}>67–100 high</span>
+      </span>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +218,7 @@ function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
   return (
     <aside className={`${s.panel} ${s.errorPanel}`} role="alert" aria-label="Query failed">
       <div className={s.errorHeader}>
-        <span className={s.errorIcon} aria-hidden="true">⚠</span>
+        <AlertTriangle size={16} className={s.errorIcon} aria-hidden="true" />
         <p className={s.errorTitle}>
           {error.kind === '400' && 'Invalid request'}
           {error.kind === '422' && 'Incomplete data'}
@@ -259,7 +288,7 @@ function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
                 onClick={onRetry}
                 aria-label="Retry the recommendation request"
               >
-                <span aria-hidden="true">↺</span>
+                <RefreshCw size={13} aria-hidden="true" />
                 Retry
               </button>
             )}
@@ -280,7 +309,7 @@ function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
                 onClick={onRetry}
                 aria-label="Retry the recommendation request"
               >
-                <span aria-hidden="true">↺</span>
+                <RefreshCw size={13} aria-hidden="true" />
                 Retry
               </button>
             )}
@@ -298,12 +327,12 @@ function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
 function EmptyState() {
   return (
     <aside className={`${s.panel} ${s.emptyState}`} aria-label="Candidate list">
-      {/*
-        A simple grid/location marker rendered as text — domain-relevant,
-        no emoji variance risk, no external asset.
-        U+25A6 = SQUARE WITH ORTHOGONAL CROSSHATCH FILL
-      */}
-      <span className={s.emptyIcon} aria-hidden="true">⊕</span>
+      <SlidersHorizontal
+        size={28}
+        className={s.emptyIcon}
+        aria-hidden="true"
+        strokeWidth={1.25}
+      />
       <p className={s.emptyText}>
         Select a city and run the analysis to see ranked locations here.
       </p>
@@ -385,6 +414,9 @@ export function SidePanel({
         </p>
       </div>
 
+      {/* ── Score colour legend ── */}
+      <ScoreLegend />
+
       {/* ── Sort controls ── */}
       <div
         role="toolbar"
@@ -454,7 +486,7 @@ export function SidePanel({
           disabled={visibleCandidates.length === 0}
           aria-label={`Export ${visibleCandidates.length} candidates as CSV`}
         >
-          <span aria-hidden="true">↓</span>
+          <Download size={13} aria-hidden="true" />
           Export CSV ({visibleCandidates.length})
         </button>
       </div>

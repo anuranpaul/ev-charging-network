@@ -143,14 +143,20 @@
 
 /* ── Warning indicator ───────────────────────────────────────────────────── */
 
-.warningDot {
+.warningIcon {
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #e0a020;
+  color: #e0a020;
   flex-shrink: 0;
-  margin-left: 2px;
+  margin-left: 3px;
+  /* nudge into vertical alignment with mono text */
   vertical-align: middle;
   cursor: help;
+}
+
+/* ── Icon-bearing chip variant ───────────────────────────────────────────── */
+
+.detailChip--icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }

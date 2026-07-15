@@ -7,8 +7,12 @@
  *
  * Score-band background colours (#FF0000 / #FFA500 / #00AA00) are fixed
  * spec values applied inline — they are not design-system tokens.
+ *
+ * Icons from lucide-react replace emoji for consistent cross-platform
+ * rendering and controllable sizing.
  */
 
+import { ParkingSquare, TriangleAlert, Zap } from 'lucide-react';
 import type { CandidateFeature } from '../../types/geojson';
 import s from './CandidateRow.module.css';
 
@@ -65,11 +69,11 @@ export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowPro
       >
         {p.score}
         {hasWarnings && (
-          <span
-            className={s.warningDot}
+          <TriangleAlert
+            size={9}
+            className={s.warningIcon}
             title={`Warnings: ${p.warnings.join('; ')}`}
             aria-label={`${p.warnings.length} warning${p.warnings.length > 1 ? 's' : ''}`}
-            role="img"
           />
         )}
       </span>
@@ -88,12 +92,15 @@ export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowPro
           aria-label={`Population within 1 km: ${p.population_1km.toLocaleString()}`}>
           {p.population_1km.toLocaleString()} pop
         </span>
-        <span className={`${s.detailChip} ${s['detailChip--mono']}`}
+        <span className={`${s.detailChip} ${s['detailChip--mono']} ${s['detailChip--icon']}`}
           aria-label={`Nearest charger: ${fmtDist(p.nearest_charger_distance_m)}`}>
-          ⚡ {fmtDist(p.nearest_charger_distance_m)}
+          <Zap size={10} aria-hidden="true" />
+          {fmtDist(p.nearest_charger_distance_m)}
         </span>
         {p.parking_available && (
-          <span className={s.detailChip} aria-label="Parking available">🅿</span>
+          <span className={`${s.detailChip} ${s['detailChip--icon']}`} aria-label="Parking available">
+            <ParkingSquare size={10} aria-hidden="true" />
+          </span>
         )}
       </div>
     </li>

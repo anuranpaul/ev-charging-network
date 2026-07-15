@@ -184,21 +184,7 @@ function ChargeWiseApp() {
         {showSidePanel && (
           <aside
             aria-label={isLoading ? 'Loading results' : queryError ? 'Query error' : 'Ranked candidates'}
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: 300,
-              background: 'color-mix(in srgb, var(--surface-panel) 94%, transparent)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              borderLeft: '1px solid var(--line-grid)',
-              zIndex: 20,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
+            className="cw-results-panel"
           >
             <SidePanel
               response={response}

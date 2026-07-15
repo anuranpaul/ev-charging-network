@@ -172,8 +172,7 @@
 }
 
 .errorBadge {
-  font-size: 10px;
-  line-height: 1;
+  /* Lucide SVG — size set via the size prop; colour only needed here */
   color: #e05252;
   flex-shrink: 0;
 }

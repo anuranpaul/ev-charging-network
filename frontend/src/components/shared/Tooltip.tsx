@@ -52,15 +52,20 @@ export function Tooltip({ x, y, children, onClose }: TooltipProps) {
         top: adjustedY,
         left: adjustedX,
         zIndex: 9999,
-        background: 'rgba(20,20,20,0.93)',
-        color: '#f0f0f0',
-        borderRadius: 6,
+        /* Use design-system tokens so the tooltip matches the panel chrome */
+        background: 'color-mix(in srgb, var(--surface-panel) 97%, transparent)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)',
+        border: '1px solid var(--line-grid)',
+        color: 'var(--text-primary)',
+        borderRadius: 8,
         padding: '10px 14px',
-        fontSize: 13,
-        lineHeight: 1.5,
+        fontSize: 'var(--text-caption)',
+        lineHeight: 1.6,
         pointerEvents: 'none',
         width: W,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+        boxShadow: '0 6px 24px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.3)',
+        fontFamily: 'var(--font-body)',
       }}
     >
       {children}

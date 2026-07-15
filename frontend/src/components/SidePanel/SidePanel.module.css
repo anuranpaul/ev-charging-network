@@ -242,12 +242,10 @@
 }
 
 .emptyIcon {
-  font-size: 22px;
-  line-height: 1;
+  /* Lucide SVG — override the default stroke to secondary text colour */
+  color: var(--text-secondary);
   opacity: 0.3;
-  /* prevent the icon from inheriting the body font's letter-spacing */
-  letter-spacing: 0;
-  user-select: none;
+  flex-shrink: 0;
 }
 
 .emptyText {
@@ -588,4 +586,43 @@
 .retryBtn:focus-visible {
   box-shadow: var(--focus-ring);
   border-color: var(--accent-signal);
+}
+
+/* ── Score legend ────────────────────────────────────────────────────────── */
+
+/*
+ * Compact three-swatch strip that maps the red/amber/green score bands
+ * to their numeric ranges. Lives just below the header in the results view
+ * so users can cross-reference map marker colours without leaving the panel.
+ */
+
+.scoreLegend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legendSwatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* background is set inline with the fixed spec colour */
+}
+
+.legendLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  user-select: none;
 }
