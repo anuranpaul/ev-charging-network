@@ -112,3 +112,25 @@ export type EvChargerCollection = GeoJsonFeatureCollection<GeoJsonPoint, EvCharg
 
 export type MetroStationFeature = GeoJsonFeature<GeoJsonPoint, MetroStationProperties>;
 export type MetroStationCollection = GeoJsonFeatureCollection<GeoJsonPoint, MetroStationProperties>;
+
+// ---------------------------------------------------------------------------
+// Analysis response — shape returned by GET /analysis
+// ---------------------------------------------------------------------------
+
+export interface WardStat {
+  ward_name: string;
+  candidate_count: number;
+  mean_score: number;
+}
+
+export interface AnalysisResponse {
+  city: string;
+  chargerType: string;
+  total_candidates: number;
+  score_mean: number;
+  score_median: number;
+  score_p90: number;
+  coverage_pct: number;
+  ward_stats: WardStat[];
+}
+

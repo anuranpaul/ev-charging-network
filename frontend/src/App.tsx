@@ -26,7 +26,7 @@ import { SidePanel } from './components/SidePanel';
 import { useHealthCheck } from './hooks/useHealthCheck';
 import { apiClient } from './services/apiClient';
 import type { SelectionState } from './types/domain';
-import type { CandidateFeature, RecommendationResponse } from './types/geojson';
+import type { CandidateFeature, RecommendationResponse, AnalysisResponse } from './types/geojson';
 
 // ---------------------------------------------------------------------------
 // Status dot
@@ -57,6 +57,7 @@ function ChargeWiseApp() {
   const health = useHealthCheck();
 
   const [response, setResponse] = useState<RecommendationResponse | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
@@ -68,15 +69,21 @@ function ChargeWiseApp() {
       setSelectedRank(null);
       setActiveCity(selection.city);
       try {
-        const data = await apiClient.post<RecommendationResponse>(
-          '/recommendation',
-          {
-            city: selection.city,
-            chargerType: selection.chargerType,
-            radius: selection.radius,
-          },
-        );
-        setResponse(data);
+        const [recommendationData, analysisData] = await Promise.all([
+          apiClient.post<RecommendationResponse>(
+            '/recommendation',
+            {
+              city: selection.city,
+              chargerType: selection.chargerType,
+              radius: selection.radius,
+            },
+          ),
+          apiClient.get<AnalysisResponse>(
+            `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`
+          )
+        ]);
+        setResponse(recommendationData);
+        setAnalysis(analysisData);
       } catch {
         // Errors are surfaced via the toast system (future); silently reset
         // loading state for now so the form re-enables.
@@ -157,7 +164,7 @@ function ChargeWiseApp() {
       </main>
 
       {/* ── 3. Bottom readout strip ────────────────────────────────────── */}
-      <StatusReadout response={response} />
+      <StatusReadout response={response} coveragePct={analysis?.coverage_pct} />
 
     </div>
   );
