@@ -315,3 +315,116 @@
   opacity: 0.75;
   transform: none;
 }
+
+/* ── Radius stepper ─────────────────────────────────────────────────────── */
+
+/*
+ * Three-part widget: [−] [value] [+]
+ * The outer div is the border container so focus and error states apply to
+ * the group as a whole rather than just the text input inside.
+ */
+
+.stepper {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line-grid);
+  border-radius: 5px;
+  overflow: hidden;          /* clip children so step buttons get the radius */
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Focused-within — treat the whole row as a single control */
+.stepper:focus-within {
+  border-color: var(--accent-signal);
+  box-shadow: var(--focus-ring);
+}
+
+.stepper:hover:not(:focus-within) {
+  border-color: var(--text-secondary);
+}
+
+/* Error state */
+.stepper--error {
+  border-color: #e05252;
+  box-shadow: 0 0 0 1px #e05252;
+}
+
+/* − / + buttons */
+.stepperBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  margin: 0;
+  /* sizing */
+  width: 32px;
+  flex-shrink: 0;
+  /* layout */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* chrome */
+  background: color-mix(in srgb, var(--line-grid) 40%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s, color 0.12s;
+  /* vertical divider between button and input */
+  border-right: 1px solid var(--line-grid);
+}
+
+/* + button divider is on the left */
+.stepperBtn:last-child {
+  border-right: none;
+  border-left: 1px solid var(--line-grid);
+}
+
+.stepperBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--line-grid) 80%, transparent);
+  color: var(--text-primary);
+}
+
+.stepperBtn:active:not(:disabled) {
+  background: var(--line-grid);
+}
+
+.stepperBtn:focus-visible {
+  /* Focus ring scoped to the button itself — the group focus-within also fires */
+  outline: none;
+  background: color-mix(in srgb, var(--accent-signal) 15%, transparent);
+  color: var(--accent-signal);
+}
+
+.stepperBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Text input inside the stepper */
+.stepperInput {
+  flex: 1;
+  min-width: 0;             /* allow flex shrink */
+  padding: 7px 8px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-mono);     /* mono so digit width is stable */
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  border: none;
+  outline: none;
+  text-align: center;
+  /* Suppress any residual spinner arrows */
+  -moz-appearance: textfield;
+}
+
+.stepperInput::-webkit-inner-spin-button,
+.stepperInput::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepperInput:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -15,12 +15,19 @@
 import { useCallback, useId, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   Download,
   RefreshCw,
   SlidersHorizontal,
 } from 'lucide-react';
 import type { QueryError } from '../../types/domain';
-import type { CandidateFeature, RecommendationResponse } from '../../types/geojson';
+import type {
+  AnalysisResponse,
+  CandidateFeature,
+  RecommendationResponse,
+  WardStat,
+} from '../../types/geojson';
 import { CandidateRow } from './CandidateRow';
 import s from './SidePanel.module.css';
 
@@ -83,6 +90,8 @@ function downloadCsv(csv: string, filename: string): void {
 
 export interface SidePanelProps {
   response: RecommendationResponse | null;
+  /** Full analysis response — supplies ward breakdown and score distribution. */
+  analysis?: AnalysisResponse | null;
   selectedRank: number | null;
   onCandidateSelect: (candidate: CandidateFeature) => void;
   /** True while POST /recommendation is in flight. */
@@ -321,6 +330,57 @@ function ErrorPanel({ error, onRetry }: ErrorPanelProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Ward breakdown — collapsible per-ward stats from GET /analysis
+// ---------------------------------------------------------------------------
+
+function WardBreakdown({ wards }: { wards: WardStat[] }) {
+  const [open, setOpen] = useState(false);
+
+  if (wards.length === 0) return null;
+
+  return (
+    <div className={s.wardSection}>
+      <button
+        type="button"
+        className={s.wardToggle}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open
+          ? <ChevronDown size={12} aria-hidden="true" />
+          : <ChevronRight size={12} aria-hidden="true" />}
+        Ward breakdown
+        <span className={s.wardCount} aria-hidden="true">({wards.length})</span>
+      </button>
+
+      {open && (
+        <div className={s.wardTable} role="table" aria-label="Per-ward candidate statistics">
+          {/* Header row */}
+          <div className={s.wardRow} role="row" aria-rowindex={1}>
+            <span className={`${s.wardCell} ${s['wardCell--head']}`} role="columnheader">Ward</span>
+            <span className={`${s.wardCell} ${s['wardCell--head']} ${s['wardCell--num']}`} role="columnheader">Count</span>
+            <span className={`${s.wardCell} ${s['wardCell--head']} ${s['wardCell--num']}`} role="columnheader">Mean</span>
+          </div>
+
+          {/* Data rows — top 15 by candidate count (already sorted by backend) */}
+          {wards.slice(0, 15).map((w, i) => (
+            <div key={w.ward_name} className={s.wardRow} role="row" aria-rowindex={i + 2}>
+              <span className={s.wardCell} role="cell">{w.ward_name}</span>
+              <span className={`${s.wardCell} ${s['wardCell--num']}`} role="cell">{w.candidate_count}</span>
+              <span className={`${s.wardCell} ${s['wardCell--num']}`} role="cell">{w.mean_score.toFixed(1)}</span>
+            </div>
+          ))}
+
+          {wards.length > 15 && (
+            <p className={s.wardMore}>+{wards.length - 15} more wards</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Empty state
 // ---------------------------------------------------------------------------
 
@@ -346,6 +406,7 @@ function EmptyState() {
 
 export function SidePanel({
   response,
+  analysis = null,
   selectedRank,
   onCandidateSelect,
   isLoading = false,
@@ -476,6 +537,11 @@ export function SidePanel({
           />
         ))}
       </ul>
+
+      {/* ── Ward breakdown (from analysis) ── */}
+      {analysis?.ward_stats && analysis.ward_stats.length > 0 && (
+        <WardBreakdown wards={analysis.ward_stats} />
+      )}
 
       {/* ── CSV export ── */}
       <div className={s.footer}>

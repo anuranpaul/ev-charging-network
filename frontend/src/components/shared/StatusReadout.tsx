@@ -1,28 +1,29 @@
 /**
  * StatusReadout — full-width monospace bar at the bottom of the viewport.
  *
- * Shows three stats derived from the last POST /recommendation response:
- *   candidates  — total_candidates from the response envelope
- *   coverage    — reserved slot (populated when GET /analysis is wired up)
- *   avg score   — mean of all returned candidate scores, rounded
+ * Shows five stats from the paired POST /recommendation + GET /analysis
+ * responses:
  *
- * Before any query has run all three show an em-dash (—), not zero.
+ *   candidates  — total_candidates (from recommendation response)
+ *   coverage    — coverage_pct     (from analysis response, %)
+ *   mean score  — score_mean       (server-computed over all candidates)
+ *   median      — score_median
+ *   p90         — score_p90
+ *
+ * Before any query has run all slots show an em-dash (—).
+ * coverage shows "n/a" if the analysis response hasn't arrived yet.
  *
  * Animation
  * ---------
  * When a new response arrives each numeric value count-up animates from
  * its previous settled value to the new target (600 ms, ease-out cubic).
- * Simultaneously a single-frame colour flash (accent → primary, 500 ms)
- * marks the moment of arrival without lingering.
- *
- * Both animations are skipped entirely when
- *   @media (prefers-reduced-motion: reduce)
- * matches — the hook jumps to the target and the CSS class is never added.
+ * A single-frame colour flash (accent → primary, 500 ms) marks arrival.
+ * Both animations respect prefers-reduced-motion.
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useCountUp } from '../../hooks/useCountUp';
-import type { RecommendationResponse } from '../../types/geojson';
+import type { AnalysisResponse, RecommendationResponse } from '../../types/geojson';
 import s from './StatusReadout.module.css';
 
 // ---------------------------------------------------------------------------
@@ -31,11 +32,8 @@ import s from './StatusReadout.module.css';
 
 export interface StatusReadoutProps {
   response: RecommendationResponse | null;
-  /**
-   * Optional coverage percentage (0–100).
-   * Not returned by POST /recommendation; pass when GET /analysis is wired.
-   */
-  coveragePct?: number | null;
+  /** Full analysis response — supplies score distribution and coverage. */
+  analysis?: AnalysisResponse | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,16 +42,12 @@ export interface StatusReadoutProps {
 
 interface StatCellProps {
   label: string;
-  /** Animated integer to display, or null for the em-dash state. */
   animatedValue: number | null;
-  /** Format the final settled integer into a display string. */
   format: (n: number) => string;
-  /** Whether this cell just received a new non-null value. */
   flash: boolean;
   /**
-   * When true and animatedValue is null, render the value slot as
-   * "n/a" instead of "—", signalling the field exists but is not yet
-   * populated rather than "no result yet".
+   * Render "n/a" instead of "—" when true and animatedValue is null —
+   * signals the field exists but isn't populated yet.
    */
   notAvailable?: boolean;
 }
@@ -68,42 +62,18 @@ function StatCell({ label, animatedValue, format, flash, notAvailable }: StatCel
     .filter(Boolean)
     .join(' ');
 
-  const displayText = isEmpty
-    ? (notAvailable ? 'n/a' : '—')
-    : format(animatedValue);
-
   return (
     <div className={s.item}>
       <span className={s.label}>{label}</span>
-      <span
-        className={valueClass}
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {displayText}
+      <span className={valueClass} aria-live="polite" aria-atomic="true">
+        {isEmpty ? (notAvailable ? 'n/a' : '—') : format(animatedValue)}
       </span>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Derive target integers from the response
-// ---------------------------------------------------------------------------
-
-function deriveTargets(response: RecommendationResponse | null) {
-  if (!response || response.features.length === 0) {
-    return { candidates: null, avgScore: null };
-  }
-  const candidates = response.total_candidates;
-  const avgScore = Math.round(
-    response.features.reduce((sum, f) => sum + f.properties.score, 0) /
-      response.features.length,
-  );
-  return { candidates, avgScore };
-}
-
-// ---------------------------------------------------------------------------
-// Hook: track whether a value just newly became non-null
+// Hook: fire once when a value newly becomes non-null or changes
 // ---------------------------------------------------------------------------
 
 function useFlash(value: number | null): boolean {
@@ -111,18 +81,13 @@ function useFlash(value: number | null): boolean {
   const prevRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Only flash when transitioning from null → number, or number → different number.
     if (value !== null && value !== prevRef.current) {
       setFlashing(true);
-      // Remove the class after the animation duration so it can re-trigger
-      // on the next response.
       const t = setTimeout(() => setFlashing(false), 520);
       prevRef.current = value;
       return () => clearTimeout(t);
     }
-    if (value === null) {
-      prevRef.current = null;
-    }
+    if (value === null) prevRef.current = null;
   }, [value]);
 
   return flashing;
@@ -132,47 +97,59 @@ function useFlash(value: number | null): boolean {
 // Component
 // ---------------------------------------------------------------------------
 
-export function StatusReadout({
-  response,
-  coveragePct = null,
-}: StatusReadoutProps) {
-  const { candidates, avgScore } = deriveTargets(response);
+export function StatusReadout({ response, analysis = null }: StatusReadoutProps) {
+  const hasResponse = response !== null && response.features.length > 0;
 
-  // Animated display values — each counts up independently.
-  const displayedCandidates = useCountUp(candidates);
-  const displayedAvgScore   = useCountUp(avgScore);
-  // Coverage is a float; multiply by 10, animate, divide back for one decimal.
-  const coverageTenths      = coveragePct !== null ? Math.round(coveragePct * 10) : null;
-  const displayedCovTenths  = useCountUp(coverageTenths);
-  const displayedCoverage   = displayedCovTenths !== null ? displayedCovTenths / 10 : null;
+  // ── Targets ──────────────────────────────────────────────────────────────
+  // candidates — from recommendation envelope (total scored, not just displayed)
+  const candidatesTarget = hasResponse ? response.total_candidates : null;
 
-  // Flash states — independent per cell so each lights up as its data arrives.
+  // All score stats and coverage from analysis. Multiply floats × 10 so
+  // useCountUp (integer-only) can animate one decimal place.
+  const coverageTenths  = analysis?.coverage_pct  != null ? Math.round(analysis.coverage_pct  * 10) : null;
+  const meanTenths      = analysis?.score_mean     != null ? Math.round(analysis.score_mean     * 10) : null;
+  const medianTenths    = analysis?.score_median   != null ? Math.round(analysis.score_median   * 10) : null;
+  const p90Tenths       = analysis?.score_p90      != null ? Math.round(analysis.score_p90      * 10) : null;
+
+  // ── Animated values ───────────────────────────────────────────────────────
+  const displayedCandidates  = useCountUp(candidatesTarget);
+  const displayedCovTenths   = useCountUp(coverageTenths);
+  const displayedMeanTenths  = useCountUp(meanTenths);
+  const displayedMedTenths   = useCountUp(medianTenths);
+  const displayedP90Tenths   = useCountUp(p90Tenths);
+
+  // ── Flash states ──────────────────────────────────────────────────────────
   const flashCandidates = useFlash(displayedCandidates);
-  const flashCoverage   = useFlash(displayedCoverage !== null ? Math.round(displayedCoverage * 10) : null);
-  const flashAvgScore   = useFlash(displayedAvgScore);
+  const flashCoverage   = useFlash(displayedCovTenths);
+  const flashMean       = useFlash(displayedMeanTenths);
+  const flashMedian     = useFlash(displayedMedTenths);
+  const flashP90        = useFlash(displayedP90Tenths);
+
+  // Format helpers — divide back to restore the decimal
+  const fmtPct    = (tenths: number) => `${(tenths / 10).toFixed(1)}%`;
+  const fmtScore  = (tenths: number) => (tenths / 10).toFixed(1);
 
   return (
-    <footer
-      className={s.bar}
-      role="contentinfo"
-      aria-label="Query summary"
-    >
-      {/* Pre-query prompt — only visible before any recommendation has run.
-          Names the three output fields so users know what to expect. */}
-      {!response && (
+    <footer className={s.bar} role="contentinfo" aria-label="Query summary">
+
+      {/* Pre-query prompt */}
+      {!hasResponse && (
         <p className={s.prompt} aria-live="polite">
           Run a recommendation to see{' '}
           <span className={s.promptField}>candidate count</span>
           {', '}
           <span className={s.promptField}>coverage %</span>
+          {', '}
+          <span className={s.promptField}>mean</span>
+          {', '}
+          <span className={s.promptField}>median</span>
           {' and '}
-          <span className={s.promptField}>avg score</span>
+          <span className={s.promptField}>p90 score</span>
           {' here.'}
         </p>
       )}
 
-      {/* Stats — always rendered so the DOM is stable; values show — when empty */}
-      {response && (
+      {hasResponse && (
         <>
           <StatCell
             label="candidates"
@@ -185,19 +162,40 @@ export function StatusReadout({
 
           <StatCell
             label="coverage"
-            animatedValue={displayedCoverage !== null ? Math.round(displayedCoverage * 10) : null}
-            format={(tenths) => `${(tenths / 10).toFixed(1)}%`}
+            animatedValue={displayedCovTenths}
+            format={fmtPct}
             flash={flashCoverage}
-            notAvailable={coveragePct === null}
+            notAvailable={analysis == null}
           />
 
           <span className={s.sep} aria-hidden="true" />
 
           <StatCell
-            label="avg score"
-            animatedValue={displayedAvgScore}
-            format={(n) => String(n)}
-            flash={flashAvgScore}
+            label="mean score"
+            animatedValue={displayedMeanTenths}
+            format={fmtScore}
+            flash={flashMean}
+            notAvailable={analysis == null}
+          />
+
+          <span className={s.sep} aria-hidden="true" />
+
+          <StatCell
+            label="median"
+            animatedValue={displayedMedTenths}
+            format={fmtScore}
+            flash={flashMedian}
+            notAvailable={analysis == null}
+          />
+
+          <span className={s.sep} aria-hidden="true" />
+
+          <StatCell
+            label="p90"
+            animatedValue={displayedP90Tenths}
+            format={fmtScore}
+            flash={flashP90}
+            notAvailable={analysis == null}
           />
         </>
       )}

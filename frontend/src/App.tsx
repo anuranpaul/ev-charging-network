@@ -17,7 +17,7 @@
  * a protected request before a key is in memory.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import './App.css';
 import { ApiKeyGate } from './components/shared/ApiKeyGate';
 import { StatusReadout } from './components/shared/StatusReadout';
@@ -75,8 +75,23 @@ function ChargeWiseApp() {
    *  503 error panel can re-issue the exact same request. */
   const [lastSelection, setLastSelection] = useState<Required<SelectionState> | null>(null);
 
+  /**
+   * AbortController for the in-flight query pair.
+   * When a new query starts we abort any previous in-flight fetch so stale
+   * responses from old parameters can never overwrite fresh ones.
+   */
+  const abortRef = useRef<AbortController | null>(null);
+
   // ── Query handler ──────────────────────────────────────────────────────
   const runQuery = useCallback(async (selection: Required<SelectionState>) => {
+    // Abort any in-flight request from a previous parameter set.
+    // This prevents a slow response from older params overwriting a faster
+    // response that just arrived for the current params.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
     setIsLoading(true);
     setQueryError(null);
     setSelectedRank(null);
@@ -92,17 +107,29 @@ function ChargeWiseApp() {
             chargerType: selection.chargerType,
             radius: selection.radius,
           },
+          { signal },
         ),
         apiClient.get<AnalysisResponse>(
-          `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`
-        )
+          `/analysis?city=${encodeURIComponent(selection.city)}&chargerType=${encodeURIComponent(selection.chargerType)}`,
+          { signal },
+        ),
       ]);
+
+      // Guard: if this controller was aborted while awaiting, a newer query
+      // is already in flight — discard these results silently.
+      if (signal.aborted) return;
+
       setResponse(recommendationData);
       setAnalysis(analysisData);
     } catch (err) {
+      // AbortError means a newer query superseded this one — not an error.
+      if (err instanceof Error && err.name === 'AbortError') return;
       setQueryError(parseQueryError(err));
     } finally {
-      setIsLoading(false);
+      // Only clear loading if this controller is still the active one.
+      if (!signal.aborted) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -125,9 +152,8 @@ function ChargeWiseApp() {
   }, []);
 
   // ── Readout strip values ───────────────────────────────────────────────
-  // Derived inside StatusReadout itself; nothing to compute here.
-  // coverage_pct is not returned by POST /recommendation; pass undefined
-  // until GET /analysis is wired up.
+  // analysis fields (score_mean, score_median, score_p90, coverage_pct,
+  // ward_stats) are passed directly to StatusReadout and SidePanel.
 
   const hasResults = response !== null && response.features.length > 0;
   // Show the side panel whenever we're loading, there's an error, or results exist.
@@ -188,6 +214,7 @@ function ChargeWiseApp() {
           >
             <SidePanel
               response={response}
+              analysis={analysis}
               selectedRank={selectedRank}
               onCandidateSelect={handleCandidateSelect}
               isLoading={isLoading}
@@ -201,7 +228,7 @@ function ChargeWiseApp() {
       </main>
 
       {/* ── 3. Bottom readout strip ────────────────────────────────────── */}
-      <StatusReadout response={response} coveragePct={analysis?.coverage_pct} />
+      <StatusReadout response={response} analysis={analysis} />
 
     </div>
   );

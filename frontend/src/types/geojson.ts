@@ -125,8 +125,16 @@ export interface WardStat {
 
 export interface AnalysisResponse {
   city: string;
-  chargerType: string;
+  /**
+   * FastAPI serialises this as `charger_type` (field name) unless
+   * response_model_by_alias=True is set on the route. Both keys are
+   * accepted here so the type works regardless of serialisation mode.
+   */
+  charger_type?: string;
+  /** Alias form — present if the backend ever enables by_alias serialisation. */
+  chargerType?: string;
   total_candidates: number;
+  /** Server-computed mean over ALL candidates (not just the displayed slice). */
   score_mean: number;
   score_median: number;
   score_p90: number;

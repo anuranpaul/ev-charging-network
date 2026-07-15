@@ -626,3 +626,123 @@
   white-space: nowrap;
   user-select: none;
 }
+
+/* ── Ward breakdown ──────────────────────────────────────────────────────── */
+
+/*
+ * Collapsible section that renders the per-ward statistics from GET /analysis.
+ * Sits between the candidate list and the export footer.
+ * The table uses div+role="table" so it can be styled freely without fighting
+ * the browser's default table layout.
+ */
+
+.wardSection {
+  border-top: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+/* Toggle button — full-width, minimal, looks like a section header */
+.wardToggle {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+  /* layout */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 14px;
+  /* type */
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.wardToggle:hover {
+  background: color-mix(in srgb, var(--line-grid) 40%, transparent);
+  color: var(--text-primary);
+}
+
+.wardToggle:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.wardCount {
+  margin-left: 2px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+/* Table container */
+.wardTable {
+  overflow-x: auto;
+  padding: 0 6px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Each row — three equal-ish columns */
+.wardRow {
+  display: grid;
+  grid-template-columns: 1fr 5ch 5ch;
+  gap: 0 8px;
+  align-items: baseline;
+  padding: 3px 8px;
+  border-radius: 3px;
+}
+
+.wardRow:hover {
+  background: color-mix(in srgb, var(--line-grid) 30%, transparent);
+}
+
+/* Cell base */
+.wardCell {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Header cells */
+.wardCell--head {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line-grid);
+}
+
+/* Numeric cells — right-aligned, mono face */
+.wardCell--num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-mono);
+  text-align: right;
+}
+
+/* "+N more" footer */
+.wardMore {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+  padding: 2px 8px 0;
+  margin: 0;
+  opacity: 0.7;
+}
