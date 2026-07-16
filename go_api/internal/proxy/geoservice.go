@@ -110,6 +110,41 @@ func (c *GeoClient) CallGET(r *http.Request, upstreamURL string) CallResult {
 	}
 }
 
+// CallGETWithTimeout proxies a GET request like CallGET but uses a caller-
+// supplied timeout instead of the client's default TimeoutSec.
+func (c *GeoClient) CallGETWithTimeout(r *http.Request, upstreamURL string, timeout time.Duration) CallResult {
+	correlationID := r.Header.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+	req.Header.Set("X-Correlation-ID", correlationID)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+
+	return CallResult{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		Headers:    resp.Header,
+	}
+}
+
 // Write503 writes a standard 503 with Retry-After: 30 to w.
 func Write503(w http.ResponseWriter) {
 	w.Header().Set("Retry-After", "30")

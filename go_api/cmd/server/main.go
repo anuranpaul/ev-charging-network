@@ -93,6 +93,9 @@ func main() {
 	mux.HandleFunc("/chargers", handlers.ChargersHandler(geoProxy))
 	mux.HandleFunc("/recommendation", handlers.RecommendationHandler(geoProxy, memCache))
 	mux.HandleFunc("/analysis", handlers.AnalysisHandler(geoProxy))
+	// "/layers/" (trailing slash) matches /layers/{layer_id} via ServeMux
+	// prefix matching — the handler extracts the layer_id from the path.
+	mux.HandleFunc("/layers/", handlers.LayersHandler(geoProxy))
 
 	// Catch-all: return a JSON 404 instead of the default plain-text body so
 	// API clients always receive a consistent JSON envelope.
