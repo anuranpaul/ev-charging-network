@@ -141,7 +141,6 @@ function ChargeWiseApp() {
    * entered "recommend" mode, so we can faithfully restore its toggle state
    * when returning to "explore" — not force it back on if it was off.
    */
-  const evChargersWasActiveRef = useRef<boolean>(false);
   /** The city/charger being scored — held separately so the loading panel
    *  can show "Scoring candidates for Bengaluru…" while the state
    *  for the previous completed query is still visible briefly. */
@@ -236,18 +235,9 @@ function ChargeWiseApp() {
   }, []);
 
   /**
-   * Called by MapView whenever the ev_chargers toggle is flipped.
-   * We record the current active state so we can restore it correctly
-   * when returning to "explore" mode via the panel close button.
-   */
-  const handleEvChargersToggle = useCallback((isActive: boolean) => {
-    evChargersWasActiveRef.current = isActive;
-  }, []);
-
-  /**
    * Called by SidePanel's ✕ close button.
-   * Reverts to "explore" mode so ev_chargers restores to its prior state,
-   * and clears the results/error so the side panel collapses.
+   * Reverts to "explore" mode so the panel collapses and the map returns
+   * to its default explore state.
    */
   const handleResultsClose = useCallback(() => {
     setViewMode('explore');
@@ -300,8 +290,6 @@ function ChargeWiseApp() {
           onCandidateSelect={handleCandidateSelect}
           hasResults={hasResults}
           viewMode={viewMode}
-          evChargersWasActive={evChargersWasActiveRef.current}
-          onEvChargersToggle={handleEvChargersToggle}
           totalCandidates={response?.total_candidates}
         />
 

@@ -44,6 +44,13 @@ const DISPLAY_COUNT_MAX     = 200;
 const DISPLAY_COUNT_DEFAULT = 50;
 const DISPLAY_COUNT_STEP    = 10;
 
+/** Short label describing which factors each charger type weights most heavily. */
+const CHARGER_TYPE_EMPHASIS: Record<string, string> = {
+  SLOW:    'Weights: population density (45%) · parking (20%) · charger gap (20%)',
+  FAST:    'Weights: population density (35%) · charger gap (25%) · road access (15%)',
+  DC_FAST: 'Weights: road access (35%) · charger gap (25%) · population (20%)',
+};
+
 // ---------------------------------------------------------------------------
 // CSV helpers — unchanged from original
 // ---------------------------------------------------------------------------
@@ -491,6 +498,11 @@ export function SidePanel({
           <p className={s.headerMeta}>
             {response.total_candidates.toLocaleString()} candidates scored
           </p>
+          {CHARGER_TYPE_EMPHASIS[response.chargerType] && (
+            <p className={s.chargerEmphasis}>
+              {CHARGER_TYPE_EMPHASIS[response.chargerType]}
+            </p>
+          )}
         </div>
         {onClose && (
           <button

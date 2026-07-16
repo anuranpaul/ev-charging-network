@@ -68,21 +68,10 @@ export interface MapViewProps {
   /**
    * Current application view mode.
    * "explore" — base layers render per their toggle states.
-   * "recommend" — ev_chargers is suppressed regardless of toggle state;
-   *   the candidate ScatterplotLayer is the primary visual.
+   * "recommend" — candidate ScatterplotLayer is the primary visual;
+   *   ev_chargers remains visible if the user has it toggled on.
    */
   viewMode?: ViewMode;
-  /**
-   * Whether ev_chargers was active before the last transition into
-   * "recommend" mode. Used to restore correct toggle state on close.
-   * Provided by App so MapView can re-activate the layer when reverting.
-   */
-  evChargersWasActive?: boolean;
-  /**
-   * Called whenever the ev_chargers toggle is flipped so the parent can
-   * record the latest state for restore-on-close.
-   */
-  onEvChargersToggle?: (isActive: boolean) => void;
   /**
    * Total candidates scored (from response.total_candidates) — shown in the
    * mode label as "X of Y" where X = features.length, Y = total_candidates.
@@ -108,7 +97,7 @@ interface TooltipState {
 const BASE_LAYER_OPACITY_FULL   = 1.0;
 const BASE_LAYER_OPACITY_DIMMED = 0.25;
 
-export function MapView({ city, candidates, selectedRank, onCandidateSelect, hasResults = false, viewMode = 'explore', evChargersWasActive = false, onEvChargersToggle, totalCandidates }: MapViewProps) {
+export function MapView({ city, candidates, selectedRank, onCandidateSelect, hasResults = false, viewMode = 'explore', totalCandidates }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
@@ -140,43 +129,6 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
     setOpacityRestored(true);
   }, []);
 
-  /**
-   * Wraps toggleLayer to intercept ev_chargers specifically so we can notify
-   * the parent of its latest active state for restore-on-close tracking.
-   */
-  const handleToggleLayer = useCallback(
-    (id: BaseLayerId) => {
-      toggleLayer(id);
-      if (id === 'ev_chargers' && onEvChargersToggle) {
-        // After toggling, the set will have the opposite of what it was.
-        // activeLayers is the state *before* toggle, so we invert.
-        onEvChargersToggle(!activeLayers.has('ev_chargers'));
-      }
-    },
-    [toggleLayer, activeLayers, onEvChargersToggle],
-  );
-
-  /**
-   * When transitioning from "recommend" → "explore", restore ev_chargers
-   * to the state it had before "recommend" mode kicked in.
-   */
-  const prevViewModeRef = useRef<ViewMode>(viewMode);
-  useEffect(() => {
-    const wasRecommend = prevViewModeRef.current === 'recommend';
-    const isNowExplore = viewMode === 'explore';
-    if (wasRecommend && isNowExplore) {
-      const isCurrentlyActive = activeLayers.has('ev_chargers');
-      // Restore: add it back if it was on before, remove if it was off.
-      if (evChargersWasActive && !isCurrentlyActive) {
-        toggleLayer('ev_chargers');
-      } else if (!evChargersWasActive && isCurrentlyActive) {
-        toggleLayer('ev_chargers');
-      }
-    }
-    prevViewModeRef.current = viewMode;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode]);
-
   // ---------------------------------------------------------------------------
   // 1. Mount MapLibre + Deck.gl overlay once.
   // ---------------------------------------------------------------------------
@@ -188,7 +140,6 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
       style: config.mapStyleUrl,
       center: DEFAULT_CENTRE,
       zoom: DEFAULT_ZOOM,
-      attributionControl: true,
     });
 
     map.once('load', () => {
@@ -235,10 +186,11 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
   // 4. Rebuild all Deck.gl layers whenever relevant state changes.
   // ---------------------------------------------------------------------------
   const handleMarkerClick = useCallback(
-    ({ object, x, y }: { object: CandidateFeature | null; x: number; y: number }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ({ object, x, y }: any) => {
       if (!object) return;
-      onCandidateSelect(object);
-      setTooltip({ candidate: object, x, y });
+      onCandidateSelect(object as CandidateFeature);
+      setTooltip({ candidate: object as CandidateFeature, x, y });
     },
     [onCandidateSelect],
   );
@@ -250,20 +202,9 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
     // Base GeoJSON layers
     const baseLayers = BASE_LAYERS.flatMap((cfg) => {
       if (!activeLayers.has(cfg.id as BaseLayerId)) return [];
-      // In "recommend" mode the ev_chargers layer is suppressed regardless of
-      // toggle state — candidates visually replace what that layer shows.
-      if (viewMode === 'recommend' && cfg.id === 'ev_chargers') return [];
       const state = layers.get(cfg.id as BaseLayerId);
       if (state?.status !== 'ready') return [];
       const [r, g, b] = hexToRgb(cfg.color);
-
-      // Log feature count when ev_chargers data lands so we can confirm the
-      // 39-node dataset (or however many features the API returns).
-      if (cfg.id === 'ev_chargers') {
-        console.log(
-          `[MapView] ev_chargers: ${(state.data as GeoJsonFeatureCollection).features.length} features loaded`,
-        );
-      }
 
       return [
         new GeoJsonLayer({
@@ -316,7 +257,7 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
     overlay.setProps({
       layers: candidateLayer ? [...baseLayers, candidateLayer] : baseLayers,
     });
-  }, [activeLayers, layers, candidates, selectedRank, handleMarkerClick, layerOpacity, viewMode]);
+  }, [activeLayers, layers, candidates, selectedRank, handleMarkerClick, layerOpacity]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -324,8 +265,8 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
 
   // Build the human-readable mode label shown near the map.
   const modeLabel = viewMode === 'recommend'
-    ? `Showing: recommended sites (${candidates.length.toLocaleString()}${totalCandidates !== undefined && totalCandidates !== candidates.length ? ` of ${totalCandidates.toLocaleString()}` : ''})`
-    : 'Showing: existing chargers';
+    ? `Showing: ${candidates.length.toLocaleString()} recommended sites${totalCandidates !== undefined && totalCandidates !== candidates.length ? ` (of ${totalCandidates.toLocaleString()} scored)` : ''} + existing chargers`
+    : 'Explore: toggle infrastructure layers below →';
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }} aria-label="Map">
@@ -370,14 +311,13 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
             Show existing infrastructure
           </summary>
           <div className="cw-layer-disclosure__panel">
-            <LayerToggleBar
+          <LayerToggleBar
               activeLayers={activeLayers}
               layerStates={layers}
-              onToggle={handleToggleLayer}
+              onToggle={toggleLayer}
               disabled={!city}
               isDimmed={isDimmed}
               onRestoreOpacity={handleRestoreOpacity}
-              isRecommendMode={viewMode === 'recommend'}
             />
           </div>
         </details>

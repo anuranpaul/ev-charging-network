@@ -59,6 +59,16 @@
   line-height: 1;
 }
 
+.chargerEmphasis {
+  font-family: var(--font-body);
+  font-size: 9px;
+  color: var(--text-tertiary, var(--text-secondary));
+  margin: 4px 0 0;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  opacity: 0.75;
+}
+
 /* ── Close button ────────────────────────────────────────────────────────── */
 
 .closeBtn {

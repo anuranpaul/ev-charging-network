@@ -29,12 +29,6 @@ interface LayerToggleBarProps {
   isDimmed?: boolean;
   /** Called when the user wants to restore base layers to full opacity. */
   onRestoreOpacity?: () => void;
-  /**
-   * True when the app is in "recommend" mode.
-   * The ev_chargers row is grayed out and non-interactive during this mode
-   * to prevent manual toggles conflicting with the auto-hide behaviour.
-   */
-  isRecommendMode?: boolean;
 }
 
 export function LayerToggleBar({
@@ -44,7 +38,6 @@ export function LayerToggleBar({
   disabled,
   isDimmed = false,
   onRestoreOpacity,
-  isRecommendMode = false,
 }: LayerToggleBarProps) {
   // Only show the restore affordance when there are active layers to restore.
   const hasActiveLayers = activeLayers.size > 0;
@@ -84,26 +77,17 @@ export function LayerToggleBar({
           ? (state as { status: 'error'; message: string }).message
           : undefined;
 
-        // In "recommend" mode, the ev_chargers row is locked — manually
-        // toggling it would conflict with the auto-hide behaviour.
-        const isEvChargers = layer.id === 'ev_chargers';
-        const isRowDisabled = disabled || (isRecommendMode && isEvChargers);
-        const rowTitle = isRecommendMode && isEvChargers
-          ? 'Hidden while showing recommendations — close the panel to restore'
-          : undefined;
-
         return (
           <button
             key={layer.id}
             type="button"
             role="switch"
-            aria-checked={isActive && !(isRecommendMode && isEvChargers)}
+            aria-checked={isActive}
             aria-label={`${layer.label} layer — ${isActive ? 'visible' : 'hidden'}`}
             aria-busy={isLoading || undefined}
-            aria-disabled={isRowDisabled || undefined}
-            title={rowTitle}
-            className={[s.row, isRecommendMode && isEvChargers ? s['row--locked'] : ''].filter(Boolean).join(' ')}
-            disabled={isRowDisabled}
+            aria-disabled={disabled || undefined}
+            className={s.row}
+            disabled={disabled}
             onClick={() => onToggle(layer.id)}
             // Thread the layer colour into the CSS module via a custom property
             style={{ '--layer-color': layer.color } as React.CSSProperties}
@@ -114,18 +98,13 @@ export function LayerToggleBar({
             {/* Label */}
             <span className={s.rowLabel}>{layer.label}</span>
 
-            {/* Locked indicator — shown when ev_chargers is suppressed in recommend mode */}
-            {isRecommendMode && isEvChargers && (
-              <span className={s.lockedBadge} aria-hidden="true" title={rowTitle}>⊘</span>
-            )}
-
             {/* Loading spinner — shown while GeoJSON is being fetched */}
-            {isLoading && !isRecommendMode && (
+            {isLoading && (
               <span className={s.spinner} aria-hidden="true" />
             )}
 
             {/* Error badge — shown if the fetch failed */}
-            {hasError && !isLoading && !isRecommendMode && (
+            {hasError && !isLoading && (
               <span title={errMsg} aria-label="Failed to load">
                 <TriangleAlert
                   size={10}

@@ -182,20 +182,6 @@
    :disabled state so the user understands *why* it's not clickable.
    ─────────────────────────────────────────────────────────────────────── */
 
-.row--locked {
-  opacity: 0.45;
-  cursor: not-allowed;
-  /* Subtle italic on the label to signal the layer is temporarily managed */
-  font-style: italic;
-}
-
-.lockedBadge {
-  font-size: 10px;
-  flex-shrink: 0;
-  color: var(--text-secondary);
-  opacity: 0.7;
-  /* A ⊘ symbol communicates "unavailable" without being alarming */
-}
 
 /* ── Dim banner ──────────────────────────────────────────────────────────
  * Appears between the heading and the toggle rows when base layers are

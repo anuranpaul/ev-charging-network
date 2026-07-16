@@ -25,7 +25,7 @@ export type GeoJsonGeometry = GeoJsonPoint | GeoJsonPolygon;
 
 export interface GeoJsonFeature<
   G extends GeoJsonGeometry = GeoJsonGeometry,
-  P extends Record<string, unknown> = Record<string, unknown>,
+  P extends Record<string, any> = Record<string, any>,
 > {
   type: 'Feature';
   geometry: G;
@@ -35,7 +35,7 @@ export interface GeoJsonFeature<
 
 export interface GeoJsonFeatureCollection<
   G extends GeoJsonGeometry = GeoJsonGeometry,
-  P extends Record<string, unknown> = Record<string, unknown>,
+  P extends Record<string, any> = Record<string, any>,
 > {
   type: 'FeatureCollection';
   features: Array<GeoJsonFeature<G, P>>;

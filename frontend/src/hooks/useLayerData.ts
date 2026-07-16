@@ -17,6 +17,9 @@ import type { BaseLayerId } from '../types/domain';
 import { layerApiPath } from '../types/domain';
 import type { GeoJsonFeatureCollection } from '../types/geojson';
 
+/** The layer that is activated by default whenever a city is selected. */
+const DEFAULT_ACTIVE_LAYER: BaseLayerId = 'ev_chargers';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -53,9 +56,15 @@ export function useLayerData(city: string | null): UseLayerDataResult {
   // Cache keyed on `${city}/${layerId}` — survives re-renders, cleared on city change.
   const cacheRef = useRef<Map<string, GeoJsonFeatureCollection>>(new Map());
 
-  // Clear all state when the city changes.
+  // When the city changes: clear stale state, then pre-activate ev_chargers
+  // so the existing charger network is visible by default without any manual
+  // toggle interaction. The fetch is triggered inside a separate effect below.
   useEffect(() => {
-    setActiveLayers(new Set());
+    if (city) {
+      setActiveLayers(new Set<BaseLayerId>([DEFAULT_ACTIVE_LAYER]));
+    } else {
+      setActiveLayers(new Set());
+    }
     setLayers(new Map());
     cacheRef.current = new Map();
   }, [city]);
@@ -113,6 +122,14 @@ export function useLayerData(city: string | null): UseLayerDataResult {
     },
     [city],
   );
+
+  // Auto-fetch the default active layer (ev_chargers) whenever a city is
+  // selected. This runs after the city-change effect has already pre-seeded
+  // the active set, so the data arrives in sync with the layer appearing.
+  useEffect(() => {
+    if (city) void fetchLayer(DEFAULT_ACTIVE_LAYER);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city]);
 
   const toggleLayer = useCallback(
     (id: BaseLayerId) => {
