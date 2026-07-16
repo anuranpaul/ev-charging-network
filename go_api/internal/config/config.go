@@ -1,9 +1,11 @@
 package config
 
 import (
+	"bufio"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -15,7 +17,36 @@ type Config struct {
 	GeoServiceTimeoutSeconds int
 }
 
+func loadEnvFile(filename string) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		val = strings.Trim(val, `"'`)
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
+}
+
 func LoadConfig() Config {
+	loadEnvFile(".env")
+
 	cfg := Config{
 		Port:          getEnvDefault("PORT", "8080"),
 		GeoServiceURL: os.Getenv("GEO_SERVICE_URL"),
