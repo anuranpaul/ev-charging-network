@@ -20,6 +20,7 @@ interface CandidateRowProps {
   candidate: CandidateFeature;
   isSelected: boolean;
   onClick: (candidate: CandidateFeature) => void;
+  total: number;
 }
 
 /** Fixed spec colours — not tokens. */
@@ -36,7 +37,7 @@ function fmtDist(v: number | null): string {
     : `${Math.round(v)} m`;
 }
 
-export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowProps) {
+export function CandidateRow({ candidate, isSelected, onClick, total }: CandidateRowProps) {
   const p = candidate.properties;
   const [lng, lat] = candidate.geometry.coordinates;
   const hasWarnings = p.warnings.length > 0;
@@ -57,8 +58,12 @@ export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowPro
       }}
     >
       {/* ── Rank ── */}
-      <span className={s.rank} aria-label={`Rank ${p.rank}`}>
-        #{p.rank}
+      <span
+        className={s.rank}
+        aria-label={`Rank ${p.rank}`}
+        title={`Rank #${p.rank} of ${total} — position after sorting by score.`}
+      >
+        Rank #{p.rank}
       </span>
 
       {/* ── Score badge ── */}
@@ -66,15 +71,20 @@ export function CandidateRow({ candidate, isSelected, onClick }: CandidateRowPro
         className={s.scoreBadge}
         style={{ background: scoreBandBg(p.score) }}
         aria-label={`Score ${p.score}`}
+        title={`Score: ${p.score} — computed from population, charger distance, road access, parking, and nearby malls.`}
       >
-        {p.score}
+        Score: {p.score}
         {hasWarnings && (
-          <TriangleAlert
-            size={9}
-            className={s.warningIcon}
+          <span
             title={`Warnings: ${p.warnings.join('; ')}`}
             aria-label={`${p.warnings.length} warning${p.warnings.length > 1 ? 's' : ''}`}
-          />
+          >
+            <TriangleAlert
+              size={9}
+              className={s.warningIcon}
+              aria-hidden="true"
+            />
+          </span>
         )}
       </span>
 

@@ -13,7 +13,7 @@
 
   display: grid;
   /* rank | score | coords/meta — fixed first two columns, meta takes the rest */
-  grid-template-columns: 3ch 3ch 1fr;
+  grid-template-columns: auto auto 1fr;
   grid-template-rows: auto auto;
   column-gap: 10px;
   row-gap: 2px;

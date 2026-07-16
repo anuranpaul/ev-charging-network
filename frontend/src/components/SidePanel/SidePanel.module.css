@@ -28,6 +28,7 @@
   padding: 14px 14px 12px;
   border-bottom: 1px solid var(--line-grid);
   flex-shrink: 0;
+  position: relative;
 }
 
 /* Text block inside the header — takes all remaining width */
@@ -97,8 +98,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--line-grid);
+  padding: 7px 14px 4px;
   flex-shrink: 0;
 }
 
@@ -411,7 +411,7 @@
 
 /* Rank pill — fixed width to match rank badge */
 .skeletonRank {
-  width: 22px;
+  width: 50px;
   height: 18px;
   flex-shrink: 0;
 }
@@ -425,7 +425,7 @@
 
 /* Score pill — fixed width to match score badge */
 .skeletonScore {
-  width: 32px;
+  width: 55px;
   height: 18px;
   flex-shrink: 0;
 }
@@ -631,43 +631,70 @@
   border-color: var(--accent-signal);
 }
 
-/* ── Score legend ────────────────────────────────────────────────────────── */
+/* ── Tied headers, captioning, close button ──────────────────────────────── */
 
-/*
- * Compact three-swatch strip that maps the red/amber/green score bands
- * to their numeric ranges. Lives just below the header in the results view
- * so users can cross-reference map marker colours without leaving the panel.
- */
-
-.scoreLegend {
+.closeBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 14px;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+
+.closeBtn:hover {
+  background: color-mix(in srgb, var(--line-grid) 60%, transparent);
+  color: var(--text-primary);
+}
+
+.closeBtn:focus-visible {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.sortCaption {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding: 0 14px 7px;
+  line-height: 1.4;
   border-bottom: 1px solid var(--line-grid);
   flex-shrink: 0;
 }
 
-.legendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.legendSwatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  /* background is set inline with the fixed spec colour */
-}
-
-.legendLabel {
+.sliderHelp {
   font-family: var(--font-body);
-  font-size: var(--text-caption);
+  font-size: 10px;
   color: var(--text-secondary);
-  white-space: nowrap;
-  user-select: none;
+  padding: 0 14px 7px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--line-grid);
+  flex-shrink: 0;
+}
+
+.tiedHeader {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--line-grid) 25%, transparent);
+  padding: 4px 8px;
+  margin: 6px 6px 4px;
+  border-radius: 4px;
+  border-left: 2px solid var(--accent-signal);
+  display: flex;
+  align-items: center;
 }
 
 /* ── Ward breakdown ──────────────────────────────────────────────────────── */

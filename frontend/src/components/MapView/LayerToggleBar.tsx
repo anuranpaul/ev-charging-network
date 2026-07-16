@@ -126,12 +126,13 @@ export function LayerToggleBar({
 
             {/* Error badge — shown if the fetch failed */}
             {hasError && !isLoading && !isRecommendMode && (
-              <TriangleAlert
-                size={10}
-                className={s.errorBadge}
-                title={errMsg}
-                aria-label="Failed to load"
-              />
+              <span title={errMsg} aria-label="Failed to load">
+                <TriangleAlert
+                  size={10}
+                  className={s.errorBadge}
+                  aria-hidden="true"
+                />
+              </span>
             )}
           </button>
         );
