@@ -59,6 +59,7 @@ from app.core.scorer import (
     ROAD_PROXIMITY_M,
     Scorer,
     WEIGHTS,
+    WEIGHTS_BY_TYPE,
 )
 
 # ---------------------------------------------------------------------------
@@ -601,8 +602,10 @@ class TestScoreBatch:
         assert (result["score"] >= 0).all()
         assert (result["score"] <= 100).all()
 
-    def test_score_five_factor_weighted_correctly(self, scorer: Scorer) -> None:
+    def test_score_five_factor_weighted_correctly_fast(self, scorer: Scorer) -> None:
         """
+        FAST weights: pop=35%, charger=25%, road=15%, parking=15%, mall=10%
+
         pop_sum=25 000           → pop_factor    = 50.0
         charger at 800 m, R=1000 → charger_factor = 80.0
         road at 100 m (≤200)     → road_factor   = 100.0
@@ -619,21 +622,86 @@ class TestScoreBatch:
             parking=_parking_poly(_square_parking(OX, OY, 50)),
             malls=_malls((OX + 300, OY)),
         )
-        result = scorer.score_batch(candidates, datasets, search_radius=1_000)
-
+        result = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="FAST"
+        )
+        w = WEIGHTS_BY_TYPE["FAST"]
         expected_score = round(
-            WEIGHTS["population"]       * 50.0
-            + WEIGHTS["charger_distance"] * 80.0
-            + WEIGHTS["road_proximity"]   * 100.0
-            + WEIGHTS["parking"]          * 100.0
-            + WEIGHTS["mall_proximity"]   * 100.0
+            w["population"]       * 50.0
+            + w["charger_distance"] * 80.0
+            + w["road_proximity"]   * 100.0
+            + w["parking"]          * 100.0
+            + w["mall_proximity"]   * 100.0
         )   # round(77.5) = 78
         assert result["score"].iloc[0] == expected_score
 
-    def test_all_layers_empty_score_uses_charger_weight_only(
+    def test_score_five_factor_weighted_correctly_dc_fast(self, scorer: Scorer) -> None:
+        """
+        DC_FAST weights: pop=20%, charger=25%, road=35%, parking=10%, mall=10%
+
+        Same candidate geometry as the FAST test — different weights must
+        produce a different score.
+
+        score = round(0.20*50 + 0.25*80 + 0.35*100 + 0.10*100 + 0.10*100)
+              = round(10.0 + 20.0 + 35.0 + 10.0 + 10.0) = round(85.0) = 85
+        """
+        candidates = _candidates((OX, OY))
+        datasets = _datasets(
+            _pop_grid(_square_cell(OX + 100, OY, 100, 25_000)),
+            ev_chargers=_chargers((OX + 800, OY)),
+            roads=_road_point((OX + 100, OY)),
+            parking=_parking_poly(_square_parking(OX, OY, 50)),
+            malls=_malls((OX + 300, OY)),
+        )
+        result = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="DC_FAST"
+        )
+        w = WEIGHTS_BY_TYPE["DC_FAST"]
+        expected_score = round(
+            w["population"]       * 50.0
+            + w["charger_distance"] * 80.0
+            + w["road_proximity"]   * 100.0
+            + w["parking"]          * 100.0
+            + w["mall_proximity"]   * 100.0
+        )   # round(85.0) = 85
+        assert result["score"].iloc[0] == expected_score
+
+    def test_score_five_factor_weighted_correctly_slow(self, scorer: Scorer) -> None:
+        """
+        SLOW weights: pop=45%, charger=20%, road=5%, parking=20%, mall=10%
+
+        Same candidate geometry as the FAST test — different weights must
+        produce a different score.
+
+        score = round(0.45*50 + 0.20*80 + 0.05*100 + 0.20*100 + 0.10*100)
+              = round(22.5 + 16.0 + 5.0 + 20.0 + 10.0) = round(73.5) = 74
+        """
+        candidates = _candidates((OX, OY))
+        datasets = _datasets(
+            _pop_grid(_square_cell(OX + 100, OY, 100, 25_000)),
+            ev_chargers=_chargers((OX + 800, OY)),
+            roads=_road_point((OX + 100, OY)),
+            parking=_parking_poly(_square_parking(OX, OY, 50)),
+            malls=_malls((OX + 300, OY)),
+        )
+        result = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="SLOW"
+        )
+        w = WEIGHTS_BY_TYPE["SLOW"]
+        expected_score = round(
+            w["population"]       * 50.0
+            + w["charger_distance"] * 80.0
+            + w["road_proximity"]   * 100.0
+            + w["parking"]          * 100.0
+            + w["mall_proximity"]   * 100.0
+        )   # round(73.5) = 74
+        assert result["score"].iloc[0] == expected_score
+
+    def test_all_layers_empty_score_uses_charger_weight_fast(
         self, scorer: Scorer
     ) -> None:
         """
+        FAST: charger_distance weight = 0.25
         Empty pop_grid  → pop_factor    = 0
         Empty chargers  → charger_factor = 100
         Empty roads     → road_factor   = 0
@@ -643,9 +711,199 @@ class TestScoreBatch:
         """
         candidates = _candidates((OX, OY))
         datasets   = _datasets(_empty_pop_grid())
-        result     = scorer.score_batch(candidates, datasets, search_radius=1_000)
-        expected   = round(WEIGHTS["charger_distance"] * 100)   # 25
+        result     = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="FAST"
+        )
+        expected = round(WEIGHTS_BY_TYPE["FAST"]["charger_distance"] * 100)   # 25
         assert result["score"].iloc[0] == expected
+
+    def test_all_layers_empty_score_uses_charger_weight_dc_fast(
+        self, scorer: Scorer
+    ) -> None:
+        """
+        DC_FAST: charger_distance weight = 0.25 → same 25 as FAST for
+        the charger-only case (both are 0.25), but SLOW differs at 0.20.
+        """
+        candidates = _candidates((OX, OY))
+        datasets   = _datasets(_empty_pop_grid())
+        result     = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="DC_FAST"
+        )
+        expected = round(WEIGHTS_BY_TYPE["DC_FAST"]["charger_distance"] * 100)  # 25
+        assert result["score"].iloc[0] == expected
+
+    def test_all_layers_empty_score_uses_charger_weight_slow(
+        self, scorer: Scorer
+    ) -> None:
+        """
+        SLOW: charger_distance weight = 0.20
+        score = round(0.20 * 100) = 20  (differs from FAST/DC_FAST = 25)
+        """
+        candidates = _candidates((OX, OY))
+        datasets   = _datasets(_empty_pop_grid())
+        result     = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="SLOW"
+        )
+        expected = round(WEIGHTS_BY_TYPE["SLOW"]["charger_distance"] * 100)  # 20
+        assert result["score"].iloc[0] == expected
+
+
+
+# ---------------------------------------------------------------------------
+# TestWeightsByType
+#
+# Validates:
+#   1. Each weight table in WEIGHTS_BY_TYPE sums to exactly 1.0 (100%).
+#   2. The WEIGHTS backward-compat alias is identical to the FAST table.
+#   3. Calling score_batch with different charger types on the same candidate
+#      set produces different scores whenever the weight tables would cause
+#      different weighted sums — confirming charger_type is not ignored.
+# ---------------------------------------------------------------------------
+
+class TestWeightsByType:
+
+    def test_fast_weights_sum_to_100_percent(self) -> None:
+        """FAST weight table must sum to exactly 1.0."""
+        total = sum(WEIGHTS_BY_TYPE["FAST"].values())
+        assert total == pytest.approx(1.0, abs=1e-9), (
+            f"FAST weights sum to {total}, expected 1.0"
+        )
+
+    def test_dc_fast_weights_sum_to_100_percent(self) -> None:
+        """DC_FAST weight table must sum to exactly 1.0."""
+        total = sum(WEIGHTS_BY_TYPE["DC_FAST"].values())
+        assert total == pytest.approx(1.0, abs=1e-9), (
+            f"DC_FAST weights sum to {total}, expected 1.0"
+        )
+
+    def test_slow_weights_sum_to_100_percent(self) -> None:
+        """SLOW weight table must sum to exactly 1.0."""
+        total = sum(WEIGHTS_BY_TYPE["SLOW"].values())
+        assert total == pytest.approx(1.0, abs=1e-9), (
+            f"SLOW weights sum to {total}, expected 1.0"
+        )
+
+    def test_weights_alias_is_fast_table(self) -> None:
+        """Backward-compat WEIGHTS alias must be identical to WEIGHTS_BY_TYPE['FAST']."""
+        assert WEIGHTS is WEIGHTS_BY_TYPE["FAST"], (
+            "WEIGHTS alias must point at the same object as WEIGHTS_BY_TYPE['FAST']"
+        )
+
+    def test_dc_fast_and_fast_produce_different_scores(self, scorer: Scorer) -> None:
+        """
+        DC_FAST weights road_proximity heavily (35%) vs FAST (15%), so a
+        candidate that is near a road but has low population must score
+        higher under DC_FAST than FAST.
+
+        Geometry:
+          - Low population (pop_sum=5 000  → pop_factor=10.0)
+          - Near a road (road_factor=100.0)
+          - No charger within radius (charger_factor=100.0)
+          - No parking (park_factor=0.0)
+          - No mall (mall_factor=0.0)
+
+        FAST:    round(0.35*10 + 0.25*100 + 0.15*100 + 0.15*0 + 0.10*0)
+               = round(3.5 + 25.0 + 15.0) = round(43.5) = 44
+        DC_FAST: round(0.20*10 + 0.25*100 + 0.35*100 + 0.10*0 + 0.10*0)
+               = round(2.0 + 25.0 + 35.0) = round(62.0) = 62
+
+        The two scores must differ.
+        """
+        candidates = _candidates((OX, OY))
+        datasets = _datasets(
+            _pop_grid(_square_cell(OX + 100, OY, 100, 5_000)),
+            ev_chargers=_empty_chargers(),          # no charger → factor=100
+            roads=_road_point((OX + 100, OY)),      # near road → factor=100
+            parking=_empty_parking(),
+            malls=_empty_malls(),
+        )
+        result_fast = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="FAST"
+        )
+        result_dc_fast = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="DC_FAST"
+        )
+        assert result_fast["score"].iloc[0] != result_dc_fast["score"].iloc[0], (
+            "DC_FAST and FAST must produce different scores when road factor "
+            "is dominant and population factor is low"
+        )
+        # DC_FAST prioritises roads (35%) over FAST (15%) → higher score here
+        assert result_dc_fast["score"].iloc[0] > result_fast["score"].iloc[0]
+
+    def test_slow_and_fast_produce_different_scores(self, scorer: Scorer) -> None:
+        """
+        SLOW weights population heavily (45%) vs FAST (35%), so a candidate
+        in a very dense area but far from roads must score higher under SLOW.
+
+        Geometry:
+          - High population (pop_sum=40 000 → pop_factor=80.0)
+          - No road within threshold (road_factor=0.0)
+          - No charger within radius (charger_factor=100.0)
+          - Candidate inside parking (park_factor=100.0)
+          - No mall (mall_factor=0.0)
+
+        FAST: round(0.35*80 + 0.25*100 + 0.15*0 + 0.15*100 + 0.10*0)
+            = round(28 + 25 + 0 + 15 + 0) = 68
+        SLOW: round(0.45*80 + 0.20*100 + 0.05*0 + 0.20*100 + 0.10*0)
+            = round(36 + 20 + 0 + 20 + 0) = 76
+
+        The two scores must differ.
+        """
+        candidates = _candidates((OX, OY))
+        datasets = _datasets(
+            _pop_grid(_square_cell(OX + 100, OY, 100, 40_000)),
+            ev_chargers=_empty_chargers(),
+            roads=_empty_roads(),
+            parking=_parking_poly(_square_parking(OX, OY, 50)),
+            malls=_empty_malls(),
+        )
+        result_fast = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="FAST"
+        )
+        result_slow = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="SLOW"
+        )
+        assert result_fast["score"].iloc[0] != result_slow["score"].iloc[0], (
+            "SLOW and FAST must produce different scores when population is "
+            "high and road factor is zero"
+        )
+        # SLOW weights population (45%) more than FAST (35%) → higher score
+        assert result_slow["score"].iloc[0] > result_fast["score"].iloc[0]
+
+    def test_all_types_produce_same_score_when_all_factors_equal(
+        self, scorer: Scorer
+    ) -> None:
+        """
+        When all five factor scores are identical the final score equals
+        that value regardless of weights (since weights sum to 1.0).
+        All three charger types must yield the same score.
+
+        Factor value 60.0 for all five:
+          score = round(1.0 * 60.0) = 60 for any weight table.
+        """
+        # pop_sum = 30 000 → pop_factor = 60.0
+        # charger at 600 m, R=1000 → charger_factor = 60.0
+        # road at 100 m → road_factor = 100.0 (binary — use a low road factor instead)
+        # For perfect equality use compute_final_score directly.
+        s60 = pd.Series([60.0])
+        for ctype in ("SLOW", "FAST", "DC_FAST"):
+            result = Scorer.compute_final_score(s60, s60, s60, s60, s60, charger_type=ctype)
+            assert result.iloc[0] == 60, (
+                f"Expected score=60 for charger_type={ctype!r} when all "
+                f"factors=60.0, got {result.iloc[0]}"
+            )
+
+    def test_unknown_charger_type_falls_back_to_fast(self, scorer: Scorer) -> None:
+        """An unrecognised charger_type string must silently use FAST weights."""
+        candidates = _candidates((OX, OY))
+        datasets   = _datasets(_empty_pop_grid())
+        result_unknown = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="UNKNOWN_TYPE"
+        )
+        result_fast = scorer.score_batch(
+            candidates, datasets, search_radius=1_000, charger_type="FAST"
+        )
+        assert result_unknown["score"].iloc[0] == result_fast["score"].iloc[0]
 
 
 # ---------------------------------------------------------------------------

@@ -11,13 +11,19 @@ Design references
   design.md §Scoring Algorithm / Factor Computation
   design.md §Correctness Properties 3, 4, 5, 6
 
-Factor weights (design.md §Factor Computation)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  population        35 %
-  charger_distance  25 %
-  road_proximity    15 %
-  parking           15 %
-  mall_proximity    10 %
+Factor weights vary by charger type (design.md §Factor Computation):
+
+  DC_FAST:
+    population 20%, charger_distance 25%, road_proximity 35%,
+    parking 10%, mall_proximity 10%
+
+  FAST (default):
+    population 35%, charger_distance 25%, road_proximity 15%,
+    parking 15%, mall_proximity 10%
+
+  SLOW:
+    population 45%, charger_distance 20%, road_proximity 5%,
+    parking 20%, mall_proximity 10%
 
 CRS contract
 ~~~~~~~~~~~~
@@ -44,13 +50,40 @@ POPULATION_NORMALISER: float = 50_000.0  # design.md §Population factor (35%)
 ROAD_PROXIMITY_M: float = 200.0          # design.md §Road proximity factor (15%)
 MALL_PROXIMITY_M: float = 500.0          # design.md §Mall proximity factor (10%)
 
-WEIGHTS: dict[str, float] = {
-    "population":       0.35,
-    "charger_distance": 0.25,
-    "road_proximity":   0.15,
-    "parking":          0.15,
-    "mall_proximity":   0.10,
+# ---------------------------------------------------------------------------
+# Per-charger-type weight tables.
+# Each table must sum to exactly 1.0 (100%).
+# ---------------------------------------------------------------------------
+
+WEIGHTS_BY_TYPE: dict[str, dict[str, float]] = {
+    "DC_FAST": {
+        "population":       0.20,
+        "charger_distance": 0.25,
+        "road_proximity":   0.35,
+        "parking":          0.10,
+        "mall_proximity":   0.10,
+    },
+    "FAST": {
+        "population":       0.35,
+        "charger_distance": 0.25,
+        "road_proximity":   0.15,
+        "parking":          0.15,
+        "mall_proximity":   0.10,
+    },
+    "SLOW": {
+        "population":       0.45,
+        "charger_distance": 0.20,
+        "road_proximity":   0.05,
+        "parking":          0.20,
+        "mall_proximity":   0.10,
+    },
 }
+
+# Backward-compatible alias — points at the FAST table, which was the
+# single fixed WEIGHTS dict before per-type weights were introduced.
+# Retained so existing tests and property tests that import ``WEIGHTS``
+# continue to work without modification.
+WEIGHTS: dict[str, float] = WEIGHTS_BY_TYPE["FAST"]
 
 
 # ---------------------------------------------------------------------------
@@ -522,19 +555,15 @@ class Scorer:
         road_factor:    pd.Series,
         park_factor:    pd.Series,
         mall_factor:    pd.Series,
+        charger_type:   str = "FAST",
     ) -> pd.Series:
         """
         Combine five per-candidate factor Series into a final weighted score.
 
-        This is the **pure arithmetic kernel** for design.md Property 3:
-
-            score = round(
-                0.35 * pop_factor
-              + 0.25 * charger_factor
-              + 0.15 * road_factor
-              + 0.15 * park_factor
-              + 0.10 * mall_factor
-            )
+        This is the **pure arithmetic kernel** for design.md Property 3.
+        The weight table is selected based on ``charger_type``
+        (SLOW / FAST / DC_FAST).  ``FAST`` is the default and matches the
+        original single fixed weight table.
 
         Post-processing:
           - ``round()`` uses Python/NumPy banker's rounding for 0.5 ties.
@@ -555,18 +584,24 @@ class Scorer:
         ----------
         pop_factor, charger_factor, road_factor, park_factor, mall_factor:
             Float Series in [0.0, 100.0], all sharing the same index.
+        charger_type:
+            One of ``"SLOW"``, ``"FAST"``, ``"DC_FAST"``.
+            Selects the weight table from ``WEIGHTS_BY_TYPE``.
+            Unknown values fall back to ``"FAST"``.
 
         Returns
         -------
         pd.Series
             Integer values in [0, 100], same index as inputs.
         """
+        weights = WEIGHTS_BY_TYPE.get(charger_type, WEIGHTS_BY_TYPE["FAST"])
+
         score: pd.Series = (
-            WEIGHTS["population"]       * pop_factor
-            + WEIGHTS["charger_distance"] * charger_factor
-            + WEIGHTS["road_proximity"]   * road_factor
-            + WEIGHTS["parking"]          * park_factor
-            + WEIGHTS["mall_proximity"]   * mall_factor
+            weights["population"]       * pop_factor
+            + weights["charger_distance"] * charger_factor
+            + weights["road_proximity"]   * road_factor
+            + weights["parking"]          * park_factor
+            + weights["mall_proximity"]   * mall_factor
         ).round().astype(int).clip(0, 100)
 
         return score
@@ -580,6 +615,7 @@ class Scorer:
         candidates: gpd.GeoDataFrame,
         datasets: Any,          # CityDatasets — loosely typed to avoid circular import
         search_radius: int,
+        charger_type: str = "FAST",
     ) -> pd.DataFrame:
         """
         Score a batch of candidates across all five factors.
@@ -594,7 +630,8 @@ class Scorer:
           ``road_factor``    — road-proximity factor
           ``park_factor``    — parking factor
           ``mall_factor``    — mall-proximity factor
-          ``score``          — final weighted score (int)
+          ``score``          — final weighted score (int), weighted per
+                               ``charger_type``
 
         Raw detail fields (reused by the router to avoid a duplicate spatial
         pass — Requirement 5 AC-5: SHALL NOT repeat row-by-row or redundant
@@ -618,6 +655,10 @@ class Scorer:
             CityDatasets instance providing all five spatial layers.
         search_radius:
             Search radius in metres for the charger-distance factor.
+        charger_type:
+            One of ``"SLOW"``, ``"FAST"``, ``"DC_FAST"``.
+            Selects the weight table from ``WEIGHTS_BY_TYPE``.
+            Defaults to ``"FAST"``.
 
         Returns
         -------
@@ -661,7 +702,8 @@ class Scorer:
         )
 
         score = self.compute_final_score(
-            pop_factor, charger_factor, road_factor, park_factor, mall_factor
+            pop_factor, charger_factor, road_factor, park_factor, mall_factor,
+            charger_type=charger_type,
         )
 
         return pd.DataFrame(

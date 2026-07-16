@@ -180,7 +180,10 @@ async def get_recommendations(
         malls=datasets.malls,
     )
 
-    scores_df = scorer.score_batch(candidates_gdf, scoring_datasets, request.radius)
+    scores_df = scorer.score_batch(
+        candidates_gdf, scoring_datasets, request.radius,
+        charger_type=request.charger_type,
+    )
     logger.info(
         "scoring complete",
         extra={
