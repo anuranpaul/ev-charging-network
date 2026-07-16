@@ -39,7 +39,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import recommendation, data_health, analysis, validate, chargers
+from app.routers import recommendation, data_health, analysis, validate, chargers, layers
 
 # ---------------------------------------------------------------------------
 # Readiness flag
@@ -267,6 +267,7 @@ def create_app() -> FastAPI:
     app.include_router(analysis.router)
     app.include_router(validate.router)
     app.include_router(chargers.router)
+    app.include_router(layers.router)
 
     # -----------------------------------------------------------------------
     # Liveness probe — GET /health
