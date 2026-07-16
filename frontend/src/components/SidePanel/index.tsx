@@ -20,6 +20,7 @@ import {
   Download,
   RefreshCw,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import type { QueryError } from '../../types/domain';
 import type {
@@ -104,6 +105,11 @@ export interface SidePanelProps {
   queryError?: QueryError | null;
   /** Called when the user clicks "Retry" in the 503 error panel. */
   onRetry?: () => void;
+  /**
+   * Called when the user clicks the ✕ close button.
+   * Parent should revert to "explore" mode and clear results.
+   */
+  onClose?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +420,7 @@ export function SidePanel({
   loadingChargerType = null,
   queryError = null,
   onRetry,
+  onClose,
 }: SidePanelProps) {
   const [sortCol, setSortCol]       = useState<SortColumn>('rank');
   const [sortDir, setSortDir]       = useState<SortDir>('asc');
@@ -467,12 +474,25 @@ export function SidePanel({
 
       {/* ── Header ── */}
       <div className={s.header}>
-        <p className={s.headerTitle}>
-          {response.city} · {response.chargerType.replace('_', ' ').toLowerCase()}
-        </p>
-        <p className={s.headerMeta}>
-          {response.total_candidates.toLocaleString()} candidates scored
-        </p>
+        <div className={s.headerText}>
+          <p className={s.headerTitle}>
+            {response.city} · {response.chargerType.replace('_', ' ').toLowerCase()}
+          </p>
+          <p className={s.headerMeta}>
+            {response.total_candidates.toLocaleString()} candidates scored
+          </p>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            className={s.closeBtn}
+            onClick={onClose}
+            aria-label="Close results and return to explore mode"
+            title="Close — return to explore mode"
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* ── Score colour legend ── */}

@@ -21,9 +21,19 @@
 /* ── Header ──────────────────────────────────────────────────────────────── */
 
 .header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   padding: 14px 14px 12px;
   border-bottom: 1px solid var(--line-grid);
   flex-shrink: 0;
+}
+
+/* Text block inside the header — takes all remaining width */
+.headerText {
+  flex: 1;
+  min-width: 0;
 }
 
 .headerTitle {
@@ -46,6 +56,39 @@
   color: var(--text-secondary);
   margin: 0;
   line-height: 1;
+}
+
+/* ── Close button ────────────────────────────────────────────────────────── */
+
+.closeBtn {
+  /* reset */
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 4px;
+  flex-shrink: 0;
+  /* layout */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+  outline: none;
+  /* Nudge slightly down so it optically aligns with the title baseline */
+  margin-top: 1px;
+}
+
+.closeBtn:hover {
+  background: color-mix(in srgb, var(--line-grid) 70%, transparent);
+  color: var(--text-primary);
+}
+
+.closeBtn:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 /* ── Sort toolbar ────────────────────────────────────────────────────────── */

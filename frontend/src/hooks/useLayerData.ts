@@ -89,6 +89,13 @@ export function useLayerData(city: string | null): UseLayerDataResult {
           layerApiPath(id, city),
         );
         cacheRef.current.set(cacheKey, data);
+
+        // Confirm feature count in the browser console so the known dataset
+        // sizes (e.g. 39 ev_charger nodes for Bengaluru) can be verified.
+        console.log(
+          `[useLayerData] ${city}/${id}: ${data.features.length} features received from ${layerApiPath(id, city)}`,
+        );
+
         setLayers((prev) => {
           const next = new Map(prev);
           next.set(id, { status: 'ready', data });

@@ -358,6 +358,34 @@ body {
   }
 }
 
+/* ── Map mode label ──────────────────────────────────────────────────────
+   Floating pill centred at the map bottom. Updates via aria-live so screen
+   readers announce the switch without requiring focus movement.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.cw-mode-label {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-panel) 85%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line-grid);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  user-select: none;
+}
+
+@media (max-width: 600px) {
+  /* Hide on very small screens — too cramped with the floating card */
+  .cw-mode-label {
+    display: none;
+  }
+}
+
 /* ── Results side panel ──────────────────────────────────────────────────
    Slides in from the right when loading, errored, or results are present.
    Removed from inline styles in App.tsx so the value is maintained here

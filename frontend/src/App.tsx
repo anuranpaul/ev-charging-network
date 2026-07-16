@@ -31,6 +31,16 @@ import { parseQueryError } from './types/domain';
 import type { CandidateFeature, RecommendationResponse, AnalysisResponse } from './types/geojson';
 
 // ---------------------------------------------------------------------------
+// View mode type
+// ---------------------------------------------------------------------------
+
+/**
+ * "explore" — base layers render normally per their toggle states.
+ * "recommend" — ev_chargers is auto-hidden; candidate ScatterplotLayer shown.
+ */
+export type ViewMode = 'explore' | 'recommend';
+
+// ---------------------------------------------------------------------------
 // Status dot
 // ---------------------------------------------------------------------------
 
@@ -63,6 +73,21 @@ function ChargeWiseApp() {
   const [selectedRank, setSelectedRank] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
+
+  /**
+   * "explore" — default mode, all toggled base layers visible normally.
+   * "recommend" — ev_chargers is auto-suppressed; candidate layer is the focus.
+   * Transitions to "recommend" when a successful response arrives.
+   * Reverts to "explore" when the results panel is closed.
+   */
+  const [viewMode, setViewMode] = useState<ViewMode>('explore');
+
+  /**
+   * Remembers whether ev_chargers was in the active set just before we
+   * entered "recommend" mode, so we can faithfully restore its toggle state
+   * when returning to "explore" — not force it back on if it was off.
+   */
+  const evChargersWasActiveRef = useRef<boolean>(false);
   /** The city/charger being scored — held separately so the loading panel
    *  can show "Scoring candidates for Bengaluru…" while the state
    *  for the previous completed query is still visible briefly. */
@@ -121,6 +146,11 @@ function ChargeWiseApp() {
 
       setResponse(recommendationData);
       setAnalysis(analysisData);
+      // Switch to recommend mode once a successful response arrives.
+      // evChargersWasActiveRef is populated by MapView's onEvChargersToggle
+      // callback whenever the user changes the ev_chargers toggle state;
+      // it reflects the toggle state at the moment results land.
+      setViewMode('recommend');
     } catch (err) {
       // AbortError means a newer query superseded this one — not an error.
       if (err instanceof Error && err.name === 'AbortError') return;
@@ -149,6 +179,28 @@ function ChargeWiseApp() {
   // ── Candidate selection (shared between map marker click and list row) ─
   const handleCandidateSelect = useCallback((candidate: CandidateFeature) => {
     setSelectedRank(candidate.properties.rank);
+  }, []);
+
+  /**
+   * Called by MapView whenever the ev_chargers toggle is flipped.
+   * We record the current active state so we can restore it correctly
+   * when returning to "explore" mode via the panel close button.
+   */
+  const handleEvChargersToggle = useCallback((isActive: boolean) => {
+    evChargersWasActiveRef.current = isActive;
+  }, []);
+
+  /**
+   * Called by SidePanel's ✕ close button.
+   * Reverts to "explore" mode so ev_chargers restores to its prior state,
+   * and clears the results/error so the side panel collapses.
+   */
+  const handleResultsClose = useCallback(() => {
+    setViewMode('explore');
+    setResponse(null);
+    setAnalysis(null);
+    setQueryError(null);
+    setSelectedRank(null);
   }, []);
 
   // ── Readout strip values ───────────────────────────────────────────────
@@ -193,6 +245,10 @@ function ChargeWiseApp() {
           selectedRank={selectedRank}
           onCandidateSelect={handleCandidateSelect}
           hasResults={hasResults}
+          viewMode={viewMode}
+          evChargersWasActive={evChargersWasActiveRef.current}
+          onEvChargersToggle={handleEvChargersToggle}
+          totalCandidates={response?.total_candidates}
         />
 
         {/* Floating selection card — always visible over the map */}
@@ -222,6 +278,7 @@ function ChargeWiseApp() {
               loadingChargerType={loadingChargerType}
               queryError={queryError}
               onRetry={handleRetry}
+              onClose={handleResultsClose}
             />
           </aside>
         )}
