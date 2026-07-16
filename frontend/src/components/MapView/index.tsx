@@ -214,8 +214,10 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
           filled: true,
           getFillColor: [r, g, b, 180],
           stroked: true,
-          getLineColor: [0, 0, 0, 100],
-          lineWidthMinPixels: 1,
+          getLineColor: [r, g, b, 180],
+          getLineWidth: 3,
+          lineWidthMinPixels: 2,
+          getPointRadius: 20,
           pointRadiusMinPixels: 4,
           pointRadiusMaxPixels: 12,
           // Render point features as circles (required for GeoJSON Point geometry).

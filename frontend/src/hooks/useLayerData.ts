@@ -144,21 +144,23 @@ export function useLayerData(city: string | null): UseLayerDataResult {
 
   const toggleLayer = useCallback(
     (id: BaseLayerId) => {
+      const isEnabling = !activeLayers.has(id);
+
       setActiveLayers((prev) => {
         const next = new Set(prev);
-        if (next.has(id)) {
-          next.delete(id);
-        } else {
+        if (isEnabling) {
           next.add(id);
-          // Fetch only when activating and a city is known.
-          // If city is null, the fetch will fire when city is later selected
-          // via the city-change effect above.
-          if (city) void fetchLayer(id);
+        } else {
+          next.delete(id);
         }
         return next;
       });
+      
+      if (isEnabling && city) {
+        void fetchLayer(id);
+      }
     },
-    [city, fetchLayer],
+    [activeLayers, city, fetchLayer],
   );
 
   return { layers, activeLayers, toggleLayer };
