@@ -21,7 +21,6 @@ interface LayerToggleBarProps {
   activeLayers: Set<BaseLayerId>;
   layerStates: LayerDataMap;
   onToggle: (id: BaseLayerId) => void;
-  disabled?: boolean;
   /**
    * True when base layers are currently rendered at reduced opacity because
    * candidate results are the active visual focus.
@@ -35,7 +34,6 @@ export function LayerToggleBar({
   activeLayers,
   layerStates,
   onToggle,
-  disabled,
   isDimmed = false,
   onRestoreOpacity,
 }: LayerToggleBarProps) {
@@ -85,9 +83,7 @@ export function LayerToggleBar({
             aria-checked={isActive}
             aria-label={`${layer.label} layer — ${isActive ? 'visible' : 'hidden'}`}
             aria-busy={isLoading || undefined}
-            aria-disabled={disabled || undefined}
             className={s.row}
-            disabled={disabled}
             onClick={() => onToggle(layer.id)}
             // Thread the layer colour into the CSS module via a custom property
             style={{ '--layer-color': layer.color } as React.CSSProperties}

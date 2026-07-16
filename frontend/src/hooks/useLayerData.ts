@@ -2,13 +2,15 @@
  * useLayerData — lazy, cached GeoJSON fetcher for the seven base map layers.
  *
  * Fetch semantics:
- *  - A layer is only fetched when it is activated for the first time for a
- *    given city (lazy).
+ *  - A layer is only fetched when it is activated (toggled on) AND a city
+ *    is known. Toggling before a city is selected stores the intent; the fetch
+ *    fires automatically once the city is picked.
  *  - Fetched data is stored in a ref keyed by `${city}/${layerId}` so
  *    re-toggling a previously activated layer within the same session never
  *    triggers a second network request (cached).
- *  - When the city changes the active set is cleared and the cache is wiped,
- *    so stale data from a previous city can't bleed through.
+ *  - When the city changes the fetch state and cache are wiped, but the
+ *    active (toggled) set is preserved — fetches for active layers re-fire
+ *    automatically for the new city.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -17,8 +19,10 @@ import type { BaseLayerId } from '../types/domain';
 import { layerApiPath } from '../types/domain';
 import type { GeoJsonFeatureCollection } from '../types/geojson';
 
-/** The layer that is activated by default whenever a city is selected. */
-const DEFAULT_ACTIVE_LAYER: BaseLayerId = 'ev_chargers';
+/** The layer that is activated by default whenever a city is selected.
+ * @deprecated No longer auto-activated; kept as a named constant for reference.
+ */
+// const DEFAULT_ACTIVE_LAYER: BaseLayerId = 'ev_chargers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,15 +60,18 @@ export function useLayerData(city: string | null): UseLayerDataResult {
   // Cache keyed on `${city}/${layerId}` — survives re-renders, cleared on city change.
   const cacheRef = useRef<Map<string, GeoJsonFeatureCollection>>(new Map());
 
-  // When the city changes: clear stale state, then pre-activate ev_chargers
-  // so the existing charger network is visible by default without any manual
-  // toggle interaction. The fetch is triggered inside a separate effect below.
+  // Snapshot of active layers at the time the city changes, so we can
+  // re-trigger fetches for all currently-toggled layers when a city is picked.
+  const activeLayersSnapshotRef = useRef<Set<BaseLayerId>>(new Set());
+
+  // Keep the snapshot ref in sync on every render so it always reflects
+  // the latest active set when the city-change effect fires.
+  activeLayersSnapshotRef.current = activeLayers;
+
+  // When the city changes: clear stale fetch state and cache.
+  // The active layer set is preserved so toggles made before a city is
+  // selected survive — their fetches fire in the effect below once city is set.
   useEffect(() => {
-    if (city) {
-      setActiveLayers(new Set<BaseLayerId>([DEFAULT_ACTIVE_LAYER]));
-    } else {
-      setActiveLayers(new Set());
-    }
     setLayers(new Map());
     cacheRef.current = new Map();
   }, [city]);
@@ -123,11 +130,15 @@ export function useLayerData(city: string | null): UseLayerDataResult {
     [city],
   );
 
-  // Auto-fetch the default active layer (ev_chargers) whenever a city is
-  // selected. This runs after the city-change effect has already pre-seeded
-  // the active set, so the data arrives in sync with the layer appearing.
+  // When a city is selected (or changes), fetch data for all layers that are
+  // currently toggled on. This means toggles made before a city is picked
+  // (pre-city exploration) are honoured as soon as the city arrives.
   useEffect(() => {
-    if (city) void fetchLayer(DEFAULT_ACTIVE_LAYER);
+    if (!city) return;
+    for (const id of activeLayersSnapshotRef.current) {
+      void fetchLayer(id);
+    }
+  // fetchLayer is stable (useCallback with [city] dep) — city change reruns this.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city]);
 
@@ -139,13 +150,15 @@ export function useLayerData(city: string | null): UseLayerDataResult {
           next.delete(id);
         } else {
           next.add(id);
-          // Trigger fetch only when activating — not when hiding.
-          void fetchLayer(id);
+          // Fetch only when activating and a city is known.
+          // If city is null, the fetch will fire when city is later selected
+          // via the city-change effect above.
+          if (city) void fetchLayer(id);
         }
         return next;
       });
     },
-    [fetchLayer],
+    [city, fetchLayer],
   );
 
   return { layers, activeLayers, toggleLayer };

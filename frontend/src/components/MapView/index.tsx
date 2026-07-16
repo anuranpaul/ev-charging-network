@@ -263,10 +263,10 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
   // Render
   // ---------------------------------------------------------------------------
 
-  // Build the human-readable mode label shown near the map.
+  // Build the human-readable mode label — only shown in recommend mode.
   const modeLabel = viewMode === 'recommend'
-    ? `Showing: ${candidates.length.toLocaleString()} recommended sites${totalCandidates !== undefined && totalCandidates !== candidates.length ? ` (of ${totalCandidates.toLocaleString()} scored)` : ''} + existing chargers`
-    : 'Explore: toggle infrastructure layers below →';
+    ? `Showing: ${candidates.length.toLocaleString()} recommended sites${totalCandidates !== undefined && totalCandidates !== candidates.length ? ` (of ${totalCandidates.toLocaleString()} scored)` : ''}`
+    : null;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }} aria-label="Map">
@@ -277,27 +277,29 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
         aria-label={city ? `Map centred on ${city}` : 'Map'}
       />
 
-      {/* Mode indicator label — always visible so the switch is never silent */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 15,
-          pointerEvents: 'none',
-        }}
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <span className="cw-mode-label">
-          {modeLabel}
-        </span>
-      </div>
+      {/* Mode indicator label — only shown when in recommend mode */}
+      {modeLabel && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 15,
+            pointerEvents: 'none',
+          }}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span className="cw-mode-label">
+            {modeLabel}
+          </span>
+        </div>
+      )}
 
-      {/* Layer disclosure — collapsed by default so first-time users focus on
-           the primary "Recommend locations" action, not layer exploration.
-           Positioned bottom-right to stay out of the critical path visually. */}
+      {/* Layer disclosure — always available so users can explore layers
+           before or after running a recommendation.
+           Positioned bottom-right. */}
       <div
         style={{
           position: 'absolute',
@@ -315,7 +317,6 @@ export function MapView({ city, candidates, selectedRank, onCandidateSelect, has
               activeLayers={activeLayers}
               layerStates={layers}
               onToggle={toggleLayer}
-              disabled={!city}
               isDimmed={isDimmed}
               onRestoreOpacity={handleRestoreOpacity}
             />
