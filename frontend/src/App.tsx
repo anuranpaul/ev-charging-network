@@ -160,6 +160,15 @@ function ChargeWiseApp() {
    */
   const abortRef = useRef<AbortController | null>(null);
 
+  /**
+   * Called by SelectionPanel when the user picks a city from the dropdown.
+   * Sets activeCity immediately so base-layer toggles can fetch data before
+   * the full recommendation form is submitted.
+   */
+  const handleCityChange = useCallback((city: string) => {
+    setActiveCity(city);
+  }, []);
+
   // ── Query handler ──────────────────────────────────────────────────────
   const runQuery = useCallback(async (selection: Required<SelectionState>) => {
     // Abort any in-flight request from a previous parameter set.
@@ -300,6 +309,7 @@ function ChargeWiseApp() {
             isLoading={isLoading}
             loadingCity={loadingCity}
             serverFieldErrors={serverFieldErrors}
+            onCityChange={handleCityChange}
           />
         </div>
 

@@ -45,6 +45,12 @@ export interface SelectionPanelProps {
    * in treatment to client-side validation failures.
    */
   serverFieldErrors?: { city?: string; chargerType?: string; radius?: string };
+  /**
+   * Called immediately when the user picks a city from the dropdown —
+   * before form submission. This lets the parent set the active city early
+   * so base-layer fetches can fire as soon as a city is known.
+   */
+  onCityChange?: (city: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +90,7 @@ export function SelectionPanel({
   isLoading = false,
   loadingCity = null,
   serverFieldErrors = {},
+  onCityChange,
 }: SelectionPanelProps) {
   const [city, setCity]               = useState<string | null>(null);
   const [chargerType, setChargerType] = useState<ChargerType | null>(null);
@@ -100,7 +107,8 @@ export function SelectionPanel({
     setChargerType(null);
     setRadius(RADIUS_DEFAULT);
     setLocalErrors({});
-  }, []);
+    onCityChange?.(newCity);
+  }, [onCityChange]);
 
   const handleChargerTypeChange = useCallback((type: ChargerType) => {
     setChargerType(type);
