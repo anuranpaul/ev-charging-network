@@ -426,6 +426,8 @@ table exactly.
 | `GET /chargers?city=` | Yes (`X-API-Key`) |
 | `POST /recommendation` | Yes (`X-API-Key`) |
 | `GET /analysis?city=&chargerType=` | Yes (`X-API-Key`) |
+| `POST /explain` | Yes (`X-API-Key`) |
+| `POST /query/parse` | Yes (`X-API-Key`) |
 
 Missing or invalid key on a protected endpoint → `401 Unauthorized`.
 
@@ -1282,3 +1284,816 @@ being deployed (Req 12 AC-4).
 | `GEO_SERVICE_TIMEOUT_SECONDS` | go_api | — | `3` |
 | `VITE_API_URL` | frontend | ✓ (build) | — |
 | `VITE_MAP_STYLE_URL` | frontend | ✓ (build) | — |
+| `LLM_PROVIDER` | geo-service | — | `mock` |
+| `LLM_API_KEY` | geo-service | — | — |
+| `LLM_MODEL` | geo-service | — | `gpt-4o-mini` |
+| `LLM_TIMEOUT_SECONDS` | geo-service | — | `10` |
+| `SCORING_MODE` | geo-service | — | `weighted` |
+| `SHAP_ENABLED` | geo-service | — | `true` |
+
+
+
+## AI Enhancements
+
+The following sections describe four AI-driven capabilities that extend
+ChargeWise beyond its deterministic scoring pipeline. They are ordered by
+implementation priority (highest first) and designed to integrate
+incrementally — each can be delivered independently without breaking the
+existing MVP flow.
+
+---
+
+### AI Enhancement 1: Anomaly Detection on Input Data
+
+**Goal** — automatically flag data quality issues in the GeoJSON datasets
+before they silently degrade scoring accuracy.
+
+#### Problem Statement
+
+The scoring pipeline trusts its input data unconditionally. A duplicated
+charger cluster, a corrupt population grid cell, or an invalid road
+geometry will produce misleading scores without any visible warning. Manual
+inspection of nine layers across five cities does not scale.
+
+#### Architecture
+
+```text
+geo-service/
+├── app/
+│   ├── core/
+│   │   └── anomaly_detector.py   # AnomalyDetector class
+│   ├── routers/
+│   │   └── data_health.py        # Extended with anomaly report
+│   └── models/
+│       └── schemas.py            # AnomalyReport, AnomalyFinding
+└── tests/
+    └── test_anomaly_detector.py
+```
+
+The detector runs at two trigger points:
+
+1. **Startup (warm-up phase)** — after `DatasetRegistry.load()` completes,
+   the detector scans all loaded GeoDataFrames and appends findings to the
+   `DataHealthResponse`. This means the first `GET /data-health` call
+   already includes anomaly data.
+2. **On-demand** — a new `GET /data-health?anomalies=true` query parameter
+   triggers a fresh scan (useful after a dataset file is replaced at
+   runtime without restarting the service).
+
+#### Detection Rules
+
+| Rule ID | Layer(s) | Detection Logic | Severity |
+|---------|----------|-----------------|----------|
+| `DUPLICATE_CLUSTER` | ev_chargers, fuel_stations | DBSCAN (eps=25 m, min_samples=3) on projected points; clusters where all features share identical `name` or `operator` tags are flagged as likely duplicates. | warning |
+| `SUSPICIOUS_UNIFORM_POP` | population_grid | If > 80% of non-zero grid cells share the exact same `population` value, flag as potential data corruption (copy-paste artifact). | error |
+| `INVALID_GEOMETRY` | all | `gdf[~gdf.is_valid]` — any feature failing Shapely `is_valid` check. Report feature index + reason from `explain_validity()`. | error |
+| `IMPLAUSIBLE_DENSITY` | population_grid | Grid cells with population > 200 000 / km² (physical impossibility for India's densest wards). | warning |
+| `ZERO_AREA_POLYGON` | parking, malls, ward_boundaries | Polygons with `area == 0` after projection to EPSG:32643. | error |
+| `ORPHAN_ROAD_SEGMENT` | roads | LineString features with length < 5 m (likely digitisation artifacts). | info |
+
+#### Data Model
+
+```python
+class AnomalySeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+class AnomalyFinding(BaseModel):
+    rule_id: str                  # e.g. "DUPLICATE_CLUSTER"
+    layer: str                    # e.g. "ev_chargers"
+    city: str
+    severity: AnomalySeverity
+    message: str                  # Human-readable description
+    affected_features: list[int]  # Feature indices in the source GeoJSON
+    geometry: dict | None = None  # Optional GeoJSON geometry for map viz
+
+class AnomalyReport(BaseModel):
+    scanned_at: datetime
+    total_findings: int
+    findings: list[AnomalyFinding]
+    layers_scanned: int
+    scan_duration_ms: float
+```
+
+#### Key Interface
+
+```python
+class AnomalyDetector:
+    """Stateless scanner — instantiated with a CityDatasets object."""
+
+    def __init__(self, city: str, datasets: CityDatasets):
+        self._city = city
+        self._datasets = datasets
+
+    def scan(self) -> AnomalyReport:
+        """Run all detection rules and return a consolidated report."""
+        ...
+
+    def _detect_duplicate_clusters(
+        self, gdf: gpd.GeoDataFrame, layer: str
+    ) -> list[AnomalyFinding]:
+        """DBSCAN on projected centroids; flag clusters with identical tags."""
+        ...
+
+    def _detect_uniform_population(
+        self, pop_grid: gpd.GeoDataFrame
+    ) -> list[AnomalyFinding]:
+        """Flag grids where > 80% of non-zero cells share a single value."""
+        ...
+
+    def _detect_invalid_geometries(
+        self, gdf: gpd.GeoDataFrame, layer: str
+    ) -> list[AnomalyFinding]:
+        """Shapely is_valid check on every feature."""
+        ...
+```
+
+#### Integration with Scoring Pipeline
+
+Anomaly detection does **not** block scoring. It is advisory. However,
+when `AnomalyFinding.severity == "error"`, the affected layer's name is
+appended to the recommendation response's top-level `warnings` array so
+the frontend can surface a banner: "Data quality issues detected in
+{layer} — scores may be less reliable."
+
+#### Frontend Surface
+
+The `GET /data-health` response is extended with an `anomalies` field.
+The frontend's existing health indicator (top bar dot) transitions from
+"ok" to "degraded" when error-severity anomalies exist for the active
+city. A future enhancement adds a dedicated "Data Quality" panel
+accessible from the top bar.
+
+#### Performance Constraint
+
+The full anomaly scan for one city (nine layers, ~5 000 total features)
+must complete in < 2 s. DBSCAN and geometry validity checks are
+vectorised via scikit-learn and Shapely/GeoPandas respectively; no
+row-by-row Python loops.
+
+---
+
+### AI Enhancement 2: AI-Powered Explanation and Justification
+
+**Goal** — when a planner selects a candidate location, generate a
+human-readable narrative explaining why it scored the way it did, suitable
+for presenting to non-technical stakeholders.
+
+#### Problem Statement
+
+The current UI shows numeric scores and raw factor values (e.g.
+`population_1km: 34210`, `nearest_charger_distance_m: 2340`). Planners
+must mentally translate these into business justifications. An AI
+explanation layer removes that friction and produces stakeholder-ready
+text in one click.
+
+#### Architecture
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  Frontend                                                │
+│  CandidateTooltip / SidePanel detail view               │
+│       │  POST /explain                                   │
+└───────┼─────────────────────────────────────────────────┘
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Go API Gateway  (:8080)                                 │
+│   POST /explain  (protected, X-API-Key)                  │
+│   • Forwards to Geo Service                              │
+│   • Cache TTL 10 min keyed on (city, rank, chargerType)  │
+└───────┼─────────────────────────────────────────────────┘
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Geo Service                                             │
+│   POST /explain                                          │
+│   • Builds a structured prompt from candidate properties │
+│   • Calls LLM provider (configurable)                    │
+│   • Returns plain-text explanation (≤ 200 words)         │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### API Contract
+
+**POST /explain** (protected)
+
+Request:
+
+```json
+{
+  "city": "Bengaluru",
+  "chargerType": "DC_FAST",
+  "rank": 3,
+  "candidate": {
+    "score": 82,
+    "factor_scores": {
+      "population": 68,
+      "charger_distance": 92,
+      "road_proximity": 100,
+      "parking": 100,
+      "mall_proximity": 0
+    },
+    "population_1km": 34210,
+    "nearest_charger_distance_m": 2340,
+    "road_type": "trunk",
+    "parking_available": true,
+    "nearest_mall_distance_m": null,
+    "coordinates": [77.6123, 12.9345]
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "explanation": "This location ranks #3 because it sits in a densely populated area (34,000+ residents within 1 km) with no existing charger for over 2.3 km — a significant coverage gap. Its position on a trunk road with dedicated parking makes it highly accessible for DC fast charging, where quick highway-adjacent stops are the primary use case. The only gap: no shopping mall within 500 m, which slightly limits dwell-time amenities but is less critical for DC fast chargers where sessions are short.",
+  "confidence": "high",
+  "generated_at": "2025-07-23T10:30:00Z",
+  "model": "gpt-4o-mini"
+}
+```
+
+#### Prompt Engineering
+
+The Geo Service builds a deterministic prompt template populated with the
+candidate's factor scores and contextual metadata. The template encodes:
+
+1. **Role** — "You are an EV infrastructure planning analyst."
+2. **Context** — city name, charger type, weight table for that type,
+   and what each factor measures.
+3. **Data** — all factor scores, raw metric values, rank, total
+   candidates scored.
+4. **Instruction** — "Explain in 2–3 sentences why this location scored
+   {score}/100 for {chargerType} placement. Reference the dominant
+   positive factors and the weakest factor. Use plain language suitable
+   for a city planning committee. Do not exceed 200 words."
+
+```python
+EXPLAIN_SYSTEM_PROMPT = """You are an EV infrastructure planning analyst.
+Given a scored candidate location for EV charger placement, produce a
+concise plain-language explanation of its score suitable for a city
+planning committee. Reference specific factor values and explain their
+practical significance. Do not exceed 200 words."""
+
+EXPLAIN_USER_TEMPLATE = """City: {city}
+Charger type: {charger_type} (weights: {weights_summary})
+Rank: #{rank} of {total_candidates}
+Overall score: {score}/100
+
+Factor breakdown:
+- Population density (1 km): {pop_score}/100 ({pop_raw:,} residents)
+- Nearest existing charger: {charger_score}/100 ({charger_dist_m:.0f} m)
+- Road proximity: {road_score}/100 (road type: {road_type})
+- Parking availability: {parking_score}/100 (available: {parking_avail})
+- Mall proximity: {mall_score}/100 ({mall_dist_desc})
+
+Explain why this location received its score, highlighting the strongest
+and weakest factors in practical terms."""
+```
+
+#### LLM Provider Abstraction
+
+```python
+# app/core/llm_provider.py
+
+class LLMProvider(Protocol):
+    async def generate(
+        self, system: str, user: str, max_tokens: int = 300
+    ) -> str: ...
+
+class OpenAIProvider:
+    """Wraps the OpenAI Chat Completions API (gpt-4o-mini default)."""
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini"): ...
+    async def generate(self, system: str, user: str, max_tokens: int = 300) -> str: ...
+
+class BedrockProvider:
+    """Wraps AWS Bedrock InvokeModel (Claude Haiku default)."""
+    def __init__(self, model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"): ...
+    async def generate(self, system: str, user: str, max_tokens: int = 300) -> str: ...
+```
+
+Configuration via env var:
+
+```bash
+# geo-service/.env
+LLM_PROVIDER=openai          # openai | bedrock | mock
+LLM_API_KEY=sk-...           # Required for openai provider
+LLM_MODEL=gpt-4o-mini        # Model identifier
+LLM_TIMEOUT_SECONDS=10       # Max wait for LLM response
+```
+
+A `MockProvider` returns a templated string using string formatting (no
+network call) for testing and local development without LLM credentials.
+
+#### Frontend Integration
+
+The `CandidateTooltip` component gains an "Explain" button. On click:
+
+1. Show a skeleton/loading state inside the tooltip.
+2. Call `POST /explain` with the candidate's properties.
+3. On success, render the explanation text below the factor scores.
+4. Cache the explanation in a `Map<string, string>` keyed by
+   `${city}/${chargerType}/${rank}` so repeat clicks don't re-call.
+
+The `SidePanel` detail view (shown when a row is expanded) also includes
+the explanation, fetched lazily on expand.
+
+#### Fallback Behaviour
+
+If the LLM call fails (timeout, rate limit, provider error):
+
+- Return a structured fallback explanation built from the template
+  without LLM, e.g.: "Score 82/100. Strongest factors: road proximity
+  (100), charger gap (92). Weakest: mall proximity (0)."
+- Set `"confidence": "fallback"` in the response.
+- Log the LLM error at WARNING level with correlation ID.
+
+#### Cost Control
+
+- Use `gpt-4o-mini` or Claude Haiku — optimised for short completions.
+- Max tokens capped at 300 per call (~$0.0001 per explanation).
+- Go API caches explanations for 10 min — repeated clicks are free.
+- Rate limit: max 20 explain calls per minute per API key (enforced at
+  Go API level via a token bucket).
+
+---
+
+### AI Enhancement 3: ML-Based Demand Prediction for Scoring
+
+**Goal** — replace or augment the fixed hand-tuned factor weights with a
+machine-learned model that predicts charger demand (or utilisation
+probability) from the same spatial features, producing more accurate
+placement recommendations.
+
+#### Problem Statement
+
+The current weight tables (`WEIGHTS_BY_TYPE`) are domain-expert guesses.
+They may not reflect actual EV adoption patterns, which vary by city
+demographics, income distribution, vehicle registration density, and
+temporal traffic flow. An ML model trained on real-world charger
+utilisation data can learn non-linear feature interactions that a linear
+weighted sum cannot capture.
+
+#### Architecture
+
+```text
+geo-service/
+├── app/
+│   ├── core/
+│   │   ├── scorer.py              # Existing — unchanged interface
+│   │   ├── ml_scorer.py           # New — MLScorer class
+│   │   └── model_registry.py     # Loads trained model artifacts
+│   ├── models/
+│   │   └── schemas.py            # ScoringMode enum added
+│   └── config.py                 # SCORING_MODE env var
+├── ml/
+│   ├── train.py                  # Training pipeline script
+│   ├── features.py               # Feature engineering from GeoDataFrames
+│   ├── evaluate.py               # Cross-validation + metrics
+│   └── models/                   # Serialised model artifacts (.joblib)
+│       ├── bengaluru_dc_fast.joblib
+│       ├── bengaluru_fast.joblib
+│       └── bengaluru_slow.joblib
+└── tests/
+    └── test_ml_scorer.py
+```
+
+#### Scoring Mode Selection
+
+A new `SCORING_MODE` env var controls which scorer runs:
+
+| Value | Behaviour |
+|-------|-----------|
+| `weighted` (default) | Use the existing `Scorer` with fixed `WEIGHTS_BY_TYPE`. No ML dependency. |
+| `ml` | Use `MLScorer` with trained model artifacts. Falls back to `weighted` if no model file exists for the requested city/chargerType. |
+| `ensemble` | Run both scorers; final score = `0.6 * ml_score + 0.4 * weighted_score`. Provides ML lift while retaining explainability of the linear model as a baseline. |
+
+The `POST /recommendation` response includes a `scoring_mode` field so
+the frontend can display which mode produced the results.
+
+#### Feature Engineering
+
+The ML model consumes the same spatial features the deterministic scorer
+computes, plus additional derived features:
+
+```python
+# ml/features.py
+
+def build_feature_matrix(
+    candidates: gpd.GeoDataFrame,
+    datasets: CityDatasets,
+    search_radius: int,
+) -> pd.DataFrame:
+    """
+    Returns a DataFrame with one row per candidate and columns:
+      - pop_1km: int (population within 1 km buffer)
+      - charger_dist_m: float (distance to nearest charger)
+      - road_dist_m: float (distance to nearest arterial road)
+      - parking_available: bool
+      - mall_dist_m: float (distance to nearest mall)
+      - metro_dist_m: float (distance to nearest metro station)
+      - tech_park_dist_m: float (distance to nearest tech park)
+      - fuel_station_count_500m: int (fuel stations within 500 m)
+      - road_type_encoded: int (ordinal: motorway=4, trunk=3, ...)
+      - ward_pop_density: float (ward-level population / ward area)
+    """
+    ...
+```
+
+#### Training Pipeline
+
+**Target variable** — charger utilisation score derived from:
+
+- Option A: Real-world utilisation data from BPCL/EESL/Tata Power open
+  datasets (sessions per day, average kWh delivered).
+- Option B (bootstrapped): Synthetic labels generated by treating existing
+  charger locations as positive examples (score 80–100) and random
+  non-charger locations as negatives (score 0–30), with intermediate
+  scores interpolated by distance from existing chargers. This allows
+  training without real utilisation data as a cold-start strategy.
+
+**Model choice** — Gradient Boosted Trees (LightGBM or XGBoost):
+
+- Handles mixed feature types (continuous + categorical).
+- Trains in seconds on ~5 000 candidates.
+- Produces feature importance rankings for explainability.
+- Serialises to a small .joblib file (< 1 MB per city/type).
+
+```python
+# ml/train.py (simplified)
+
+import lightgbm as lgb
+from sklearn.model_selection import KFold
+
+def train_model(
+    features: pd.DataFrame,
+    targets: pd.Series,
+    city: str,
+    charger_type: str,
+) -> lgb.Booster:
+    params = {
+        "objective": "regression",
+        "metric": "rmse",
+        "num_leaves": 31,
+        "learning_rate": 0.05,
+        "n_estimators": 200,
+        "min_child_samples": 5,
+    }
+    # 5-fold CV for validation
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    ...
+    model.save_model(f"ml/models/{city}_{charger_type}.joblib")
+    return model
+```
+
+#### MLScorer Interface
+
+```python
+# app/core/ml_scorer.py
+
+class MLScorer:
+    """
+    Drop-in replacement for Scorer that uses a trained LightGBM model.
+    Implements the same score_batch interface so the recommendation router
+    can swap scorers transparently based on SCORING_MODE.
+    """
+
+    def __init__(self, model_dir: str = "ml/models"):
+        self._models: dict[str, lgb.Booster] = {}
+        self._model_dir = model_dir
+
+    def load_model(self, city: str, charger_type: str) -> bool:
+        """Load a serialised model. Returns False if not found."""
+        ...
+
+    def score_batch(
+        self,
+        candidates: gpd.GeoDataFrame,
+        datasets: CityDatasets,
+        search_radius: int,
+        charger_type: str = "FAST",
+    ) -> list[ScorerResult]:
+        """
+        1. Build feature matrix from candidates + datasets.
+        2. Run model.predict() → raw scores (0–1 probability).
+        3. Scale to 0–100 integer range.
+        4. Construct ScorerResult list (factor_scores derived from
+           SHAP values for per-candidate explainability).
+        """
+        ...
+```
+
+#### SHAP-Based Factor Scores
+
+When `scoring_mode == "ml"`, the individual `factor_scores` in
+`CandidateProperties` are populated using SHAP (SHapley Additive
+exPlanations) values rather than the linear factor computation. This
+preserves the frontend's ability to display per-factor contributions
+while using a non-linear model internally.
+
+```python
+import shap
+
+explainer = shap.TreeExplainer(model)
+shap_values = explainer.shap_values(feature_matrix)
+# Normalise SHAP contributions to 0–100 per factor for UI compatibility.
+```
+
+#### Model Lifecycle
+
+| Phase | Trigger | Output |
+|-------|---------|--------|
+| Train | Manual script (`python -m ml.train --city=Bengaluru --type=DC_FAST`) | `.joblib` artifact in `ml/models/` |
+| Evaluate | Part of train script | RMSE, MAE, R² printed + stored in `ml/models/metrics.json` |
+| Deploy | Copy `.joblib` to `$DATA_DIR/../models/` or mount as volume | Model loaded at startup by `ModelRegistry` |
+| Retrain | When new utilisation data arrives or datasets are updated | Re-run train script; hot-reload via `POST /admin/reload-models` (internal) |
+
+#### Fallback Guarantee
+
+If `SCORING_MODE=ml` but no model artifact exists for the requested
+`(city, chargerType)` pair, the service logs a WARNING and falls back to
+the deterministic `Scorer` with `WEIGHTS_BY_TYPE`. The response includes
+`"scoring_mode": "weighted_fallback"` so the frontend can indicate the
+ML model was unavailable.
+
+#### Performance Constraint
+
+LightGBM inference on 500 candidates with 10 features completes in
+< 50 ms. SHAP computation adds ~200 ms for TreeExplainer. Total ML
+scoring path: < 500 ms (well within the 10 s SLA). If SHAP is too slow,
+a configuration flag `SHAP_ENABLED=false` disables per-candidate SHAP
+and populates factor_scores with the linear scorer's values as a proxy.
+
+---
+
+### AI Enhancement 4: Natural Language Query Interface
+
+**Goal** — let planners describe their intent in plain English (or Hindi)
+instead of filling form fields, enabling flexible multi-constraint queries
+that the fixed form UI cannot express.
+
+#### Problem Statement
+
+The current SelectionPanel enforces a rigid three-field form: city,
+charger type, radius. Planners often think in richer terms: "Show me DC
+fast charger opportunities along the Outer Ring Road near tech parks in
+Bengaluru" or "Where are the biggest coverage gaps for slow chargers in
+south Mumbai?" These queries involve spatial filters (near road X),
+proximity constraints (near tech parks), directional areas (south Mumbai),
+and analytical questions (coverage gaps) that the form cannot represent.
+
+#### Architecture
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  Frontend                                                │
+│  NLQueryInput component (text box + send button)         │
+│       │  POST /query/parse                               │
+└───────┼─────────────────────────────────────────────────┘
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Go API Gateway                                          │
+│   POST /query/parse  (protected)                         │
+│   • Rate limited: 10 req/min per API key                 │
+│   • Forwards to Geo Service                              │
+└───────┼─────────────────────────────────────────────────┘
+        ▼
+┌─────────────────────────────────────────────────────────┐
+│  Geo Service                                             │
+│   POST /query/parse                                      │
+│   • LLM extracts structured parameters from NL text      │
+│   • Validates extracted params against city registry      │
+│   • Returns structured SelectionState + spatial filters   │
+│   • Optionally runs /recommendation with parsed params    │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### API Contract
+
+**POST /query/parse** (protected)
+
+Request:
+
+```json
+{
+  "query": "Find the best DC fast charger spots near tech parks in Bengaluru within 2km of the Outer Ring Road",
+  "locale": "en"
+}
+```
+
+Response:
+
+```json
+{
+  "parsed": {
+    "city": "Bengaluru",
+    "chargerType": "DC_FAST",
+    "radius": 2000,
+    "spatial_filters": [
+      {
+        "type": "near_layer",
+        "layer": "tech_parks",
+        "max_distance_m": 500
+      },
+      {
+        "type": "near_road",
+        "road_name": "Outer Ring Road",
+        "max_distance_m": 2000
+      }
+    ],
+    "sort_preference": "score_desc",
+    "limit": null
+  },
+  "confidence": 0.92,
+  "clarification_needed": false,
+  "clarification_prompt": null,
+  "raw_interpretation": "DC fast chargers in Bengaluru, within 2 km of Outer Ring Road, prioritising proximity to tech parks"
+}
+```
+
+When `clarification_needed == true`, the response includes a
+`clarification_prompt` string that the frontend displays to the user,
+e.g.: "Did you mean Bengaluru or Mumbai? Your query mentions 'ring road'
+which exists in both cities."
+
+#### Prompt Engineering for Query Parsing
+
+```python
+NL_PARSE_SYSTEM_PROMPT = """You are a query parser for an EV charging
+station placement tool. Extract structured parameters from the user's
+natural language query.
+
+Available cities: {cities_list}
+Available charger types: SLOW, FAST, DC_FAST
+Radius range: 250–10000 metres (default 1500 if not specified)
+Available layers for spatial filters: ev_chargers, fuel_stations, roads,
+  parking, metro_stations, malls, tech_parks
+
+Output a JSON object with these fields:
+- city: string or null (if ambiguous, set clarification_needed=true)
+- chargerType: "SLOW" | "FAST" | "DC_FAST" | null
+- radius: integer (metres)
+- spatial_filters: array of filter objects:
+  - {type: "near_layer", layer: string, max_distance_m: int}
+  - {type: "near_road", road_name: string, max_distance_m: int}
+  - {type: "in_area", area_description: string}
+- sort_preference: "score_desc" | "distance_asc" | null
+- limit: integer or null
+- clarification_needed: boolean
+- clarification_prompt: string or null
+
+If any required field cannot be confidently extracted, set it to null and
+set clarification_needed=true with an appropriate prompt."""
+```
+
+#### Spatial Filter Execution
+
+When `spatial_filters` are present in the parsed query, the scoring
+pipeline applies them as post-filters on the candidate set:
+
+```python
+# app/core/query_executor.py
+
+class QueryExecutor:
+    """
+    Applies spatial filters parsed from NL queries to narrow the
+    candidate set before or after scoring.
+    """
+
+    def apply_filters(
+        self,
+        candidates: gpd.GeoDataFrame,
+        datasets: CityDatasets,
+        filters: list[SpatialFilter],
+    ) -> gpd.GeoDataFrame:
+        """
+        Sequentially apply each spatial filter, removing candidates
+        that do not satisfy the constraint.
+
+        Filter types:
+        - near_layer: retain candidates within max_distance_m of any
+          feature in the named layer.
+        - near_road: geocode road_name to a LineString (from roads
+          GeoDataFrame matching 'name' property), retain candidates
+          within max_distance_m of that geometry.
+        - in_area: use ward_boundaries to identify wards matching
+          area_description (fuzzy match on ward_name), retain
+          candidates within those ward polygons.
+        """
+        for f in filters:
+            if f.type == "near_layer":
+                layer_gdf = getattr(datasets, f.layer)
+                candidates = self._filter_near(
+                    candidates, layer_gdf, f.max_distance_m
+                )
+            elif f.type == "near_road":
+                road_geom = self._find_road(datasets.roads, f.road_name)
+                if road_geom is not None:
+                    candidates = self._filter_near_geom(
+                        candidates, road_geom, f.max_distance_m
+                    )
+            elif f.type == "in_area":
+                ward_mask = self._match_wards(
+                    datasets.ward_boundaries, f.area_description
+                )
+                candidates = gpd.sjoin(
+                    candidates, ward_mask, how="inner", predicate="within"
+                )
+        return candidates
+```
+
+#### Frontend Integration
+
+The `SelectionPanel` gains a collapsible "Ask in plain English" text
+area above the form fields. Flow:
+
+1. User types a natural language query and presses Enter / clicks Send.
+2. Frontend calls `POST /query/parse`.
+3. On success (`clarification_needed == false`):
+   - Auto-populate the city, chargerType, and radius form fields from
+     `parsed`.
+   - Show the `raw_interpretation` as a confirmation chip below the
+     text area: "Interpreted as: DC fast chargers in Bengaluru, near
+     tech parks, within 2 km of ORR".
+   - Auto-submit the recommendation request with `spatial_filters`
+     included in the POST body.
+4. On clarification needed:
+   - Display `clarification_prompt` in the text area as a follow-up
+     question.
+   - Wait for user response; re-submit with conversation context.
+5. On failure:
+   - Show a toast: "Could not parse your query. Try the form fields
+     above."
+   - The form remains fully functional as a fallback.
+
+#### Conversation Context
+
+For multi-turn clarification, the frontend maintains a short
+conversation history (max 3 turns) sent with each `/query/parse` call:
+
+```json
+{
+  "query": "The one in south Mumbai",
+  "conversation": [
+    { "role": "user", "content": "Show me coverage gaps for slow chargers" },
+    { "role": "assistant", "content": "Did you mean Bengaluru or Mumbai?" }
+  ],
+  "locale": "en"
+}
+```
+
+The LLM sees full context and can resolve references ("the one", "there",
+"that city") against prior turns.
+
+#### Extended POST /recommendation Body
+
+When spatial filters are active, the recommendation request body is
+extended:
+
+```json
+{
+  "city": "Bengaluru",
+  "chargerType": "DC_FAST",
+  "radius": 2000,
+  "spatial_filters": [
+    { "type": "near_layer", "layer": "tech_parks", "max_distance_m": 500 },
+    { "type": "near_road", "road_name": "Outer Ring Road", "max_distance_m": 2000 }
+  ]
+}
+```
+
+The `spatial_filters` field is optional. When absent, behaviour is
+identical to the existing API (backward compatible). When present, the
+Geo Service applies filters via `QueryExecutor` before scoring.
+
+#### Supported Languages
+
+The NL parser supports English and Hindi (Devanagari script). The LLM
+handles both natively. City names are matched case-insensitively and
+with common transliterations (e.g. "बेंगलुरु" → "Bengaluru").
+
+#### Security and Guardrails
+
+- **Prompt injection defence** — user input is placed in a clearly
+  delimited `<user_query>` XML tag within the prompt. The system prompt
+  instructs the model to only extract spatial parameters and ignore any
+  instructions embedded in the query text.
+- **Output validation** — the LLM response is parsed with Pydantic
+  (`ParsedQuery` model). If parsing fails, the endpoint returns
+  `400 Bad Request` with `clarification_needed: true`.
+- **Rate limiting** — 10 parse requests per minute per API key at the
+  Go gateway level (separate bucket from the explain endpoint).
+- **No data exfiltration** — the LLM never sees actual GeoJSON data or
+  candidate scores; it only receives the user's text query and the list
+  of valid city/layer names.
+
+#### Cost Control
+
+- Model: `gpt-4o-mini` (or Haiku) — fast, cheap, sufficient for
+  structured extraction tasks.
+- Max input tokens: ~500 (system prompt + user query + conversation).
+- Max output tokens: 300 (JSON response).
+- Estimated cost: ~$0.0002 per parse call.
+- Cached: identical queries within 5 min return cached parsed result
+  from Go API (same cache mechanism as recommendations).
