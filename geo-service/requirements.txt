@@ -14,3 +14,6 @@ numpy==1.26.4
 # HTTP client (used by the Go API proxy, available here for future use)
 httpx==0.27.0
 requests==2.34.2
+
+# Machine learning (anomaly detection — DBSCAN clustering)
+scikit-learn==1.5.1

@@ -93,6 +93,8 @@ func main() {
 	mux.HandleFunc("/chargers", handlers.ChargersHandler(geoProxy))
 	mux.HandleFunc("/recommendation", handlers.RecommendationHandler(geoProxy, memCache))
 	mux.HandleFunc("/analysis", handlers.AnalysisHandler(geoProxy))
+	mux.HandleFunc("/explain", handlers.ExplainHandler(geoProxy))
+	mux.HandleFunc("/query/parse", handlers.QueryParseHandler(geoProxy))
 	// "/layers/" (trailing slash) matches /layers/{layer_id} via ServeMux
 	// prefix matching — the handler extracts the layer_id from the path.
 	mux.HandleFunc("/layers/", handlers.LayersHandler(geoProxy))

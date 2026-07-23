@@ -74,6 +74,48 @@ func (c *GeoClient) Call(r *http.Request, rawBody []byte) CallResult {
 	}
 }
 
+// CallPOST proxies a POST request with body to an arbitrary upstream URL,
+// propagating X-Correlation-ID. Uses the client's default TimeoutSec.
+// Used by /explain and /query/parse handlers.
+func (c *GeoClient) CallPOST(r *http.Request, upstreamURL string, rawBody []byte) CallResult {
+	correlationID := r.Header.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(c.TimeoutSec)*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(rawBody))
+	if err != nil {
+		return CallResult{Err: err}
+	}
+
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/json"
+	}
+	req.Header.Set("Content-Type", ct)
+	req.Header.Set("X-Correlation-ID", correlationID)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return CallResult{Err: err}
+	}
+
+	return CallResult{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		Headers:    resp.Header,
+	}
+}
+
 // CallGET proxies a GET request to the given upstream URL, propagating the
 // X-Correlation-ID from the incoming request. It applies the same
 // timeout/503 semantics as Call.

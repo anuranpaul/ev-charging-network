@@ -237,3 +237,58 @@ class ErrorResponse(BaseModel):
 
     errors: list[FieldError] = Field(default_factory=list)
     message: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detection models (AI Enhancement 1)
+# ---------------------------------------------------------------------------
+
+
+class AnomalySeverity(str, Enum):
+    """Severity levels for data quality findings."""
+
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class AnomalyFinding(BaseModel):
+    """A single data quality issue detected during anomaly scanning."""
+
+    rule_id: str = Field(..., description="Detection rule identifier, e.g. DUPLICATE_CLUSTER")
+    layer: str = Field(..., description="Layer name where the anomaly was found")
+    city: str
+    severity: AnomalySeverity
+    message: str = Field(..., description="Human-readable description of the finding")
+    affected_features: list[int] = Field(
+        default_factory=list,
+        description="Zero-based feature indices in the source GeoJSON",
+    )
+    geometry: dict[str, Any] | None = Field(
+        None, description="Optional GeoJSON geometry for map visualisation"
+    )
+
+
+class AnomalyReport(BaseModel):
+    """Consolidated anomaly scan results for a city's datasets."""
+
+    scanned_at: str = Field(..., description="ISO-8601 timestamp of the scan")
+    total_findings: int
+    findings: list[AnomalyFinding] = Field(default_factory=list)
+    layers_scanned: int
+    scan_duration_ms: float
+
+
+class DataHealthWithAnomalies(BaseModel):
+    """
+    Extended GET /data-health response that includes anomaly scan results.
+
+    Returned when ?anomalies=true is passed, or after startup scan completes.
+    """
+
+    datasets: dict[str, DatasetHealth]
+    city_availability: dict[str, Literal["available", "partial", "unavailable"]]
+    anomalies: dict[str, AnomalyReport] = Field(
+        default_factory=dict,
+        description="Per-city anomaly reports, keyed by city name (lowercase)",
+    )

@@ -39,7 +39,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import recommendation, data_health, analysis, validate, chargers, layers
+from app.routers import recommendation, data_health, analysis, validate, chargers, layers, explain, query_parse
 
 # ---------------------------------------------------------------------------
 # Readiness flag
@@ -187,6 +187,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         },
     )
 
+    # ------------------------------------------------------------------
+    # Run anomaly detection on all warmed cities (AI Enhancement 1).
+    # Non-blocking: scan failures are logged but do not prevent readiness.
+    # ------------------------------------------------------------------
+    try:
+        from app.routers.data_health import run_startup_anomaly_scan
+        run_startup_anomaly_scan()
+    except Exception as _exc:
+        logger.warning(
+            "startup anomaly scan failed — data quality checks unavailable",
+            extra={"error": str(_exc)},
+        )
+
     yield
 
     _ready = False
@@ -268,6 +281,8 @@ def create_app() -> FastAPI:
     app.include_router(validate.router)
     app.include_router(chargers.router)
     app.include_router(layers.router)
+    app.include_router(explain.router)
+    app.include_router(query_parse.router)
 
     # -----------------------------------------------------------------------
     # Liveness probe — GET /health
